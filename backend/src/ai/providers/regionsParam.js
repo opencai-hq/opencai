@@ -6,7 +6,7 @@ const REGIONS_PROPERTY = {
   type: 'array',
   items: { type: 'string' },
   description:
-    'Optional. To run this same read-only command in several AWS regions in one step, list the region names (e.g. ["us-east-1", "eu-west-1"]) or pass ["all"] for every region enabled on the account. Leave --region out of the command when using this. Not allowed for commands that change resources.',
+    'Optional, AWS Workspaces only. To run this same read-only command in several AWS regions in one step, list the region names (e.g. ["us-east-1", "eu-west-1"]) or pass ["all"] for every region enabled on the account. Leave --region out of the command when using this. Not allowed for commands that change resources.',
 };
 
 /** The model's `regions` argument as a clean string array, or undefined. */

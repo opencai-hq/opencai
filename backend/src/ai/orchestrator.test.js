@@ -59,6 +59,8 @@ function reset() {
   S.execResults = [];
   S.provisionCalls = [];
   S.provisionError = null;
+  S.provisionCreated = false;
+  S.destroyed = [];
   S.envResult = { AWS_ACCESS_KEY_ID: 'AKIAEXAMPLE', AWS_SECRET_ACCESS_KEY: 'shh' };
 }
 
@@ -185,17 +187,11 @@ inject('./policy/commandPolicy', {
     return S.classifyResults.shift();
   },
 });
-inject('./credentials', {
-  credentialToEnv: (csp, credentialJson) => {
-    S.envCall = { csp, credentialJson };
-    return S.envResult;
-  },
-});
 inject('./sandbox/sandboxManager', {
   async provisionSandbox(session, options) {
     S.provisionCalls.push({ session, options });
     if (S.provisionError) throw S.provisionError;
-    return { containerId: 'cid-1' };
+    return { containerId: 'cid-1', created: S.provisionCreated };
   },
   async executeInSandbox(containerId, argv, options) {
     S.execCalls.push({ containerId, argv, options });
@@ -206,7 +202,9 @@ inject('./sandbox/sandboxManager', {
     if (next instanceof Error) throw next;
     return next;
   },
-  async destroySandbox() {},
+  async destroySandbox(session) {
+    S.destroyed.push(session);
+  },
 });
 
 const { handleUserMessage, confirmCommand, cancelCommand } = require('./orchestrator');
@@ -227,7 +225,7 @@ function makeSession(over = {}) {
     id: 'sess-1',
     userId: 'user-1',
     workspaceId: 'ws-1',
-    mode: 'AIOPS',
+    mode: 'CLOUDOPS',
     subMode: null,
     mutatingCommandCap: 10,
     mutatingCommandCount: 0,
@@ -1755,4 +1753,169 @@ test('cancelCommand on an already-resolved command is a 409 and writes nothing',
   );
   assert.equal(S.created.length, 0);
   assert.equal(S.audits.length, 0);
+});
+
+/* -------------------------------------------------------------------------- */
+/* Cloud providers                                                             */
+/* -------------------------------------------------------------------------- */
+
+const AZURE_WORKSPACE = { id: 'ws-1', csp: 'AZURE' };
+const AZURE_CREDENTIAL = {
+  tenantId: '11111111-1111-1111-1111-111111111111',
+  clientId: '22222222-2222-2222-2222-222222222222',
+  clientSecret: 'sp-secret',
+  subscriptionId: '33333333-3333-3333-3333-333333333333',
+};
+const AZ_LIST = verdict({ argv: ['az', 'vm', 'list'], binary: 'az', verb: 'list' });
+
+test('the Workspace provider picks the sandbox image, the grammar and the prompt', async () => {
+  reset();
+  S.providerResponses = [
+    { type: 'command_request', content: 'az vm list', command: 'az vm list' },
+    { type: 'text', content: 'done' },
+  ];
+  S.classifyResults = [AZ_LIST];
+
+  await handleUserMessage({
+    session: makeSession(),
+    workspace: AZURE_WORKSPACE,
+    credential: AZURE_CREDENTIAL,
+    userId: 'user-1',
+    text: 'list my VMs',
+  });
+
+  assert.equal(S.provisionCalls[0].options.image, 'opencai-sandbox-azure:2.91.0');
+  assert.equal(S.classifyCalls[0].csp, 'AZURE');
+  const { systemPrompt } = S.providerCalls[0];
+  assert.match(
+    systemPrompt,
+    /This Workspace is on Microsoft Azure\. The only CLI available is "az"/,
+  );
+  assert.match(systemPrompt, /az <group> <command> --help/);
+  assert.doesNotMatch(systemPrompt, /aws <service>/);
+});
+
+test('a new Azure sandbox is signed in once, and the secret stays out of model commands', async () => {
+  reset();
+  S.provisionCreated = true;
+  S.providerResponses = [
+    { type: 'command_request', content: 'az vm list', command: 'az vm list' },
+    { type: 'text', content: 'done' },
+  ];
+  S.classifyResults = [AZ_LIST];
+
+  await handleUserMessage({
+    session: makeSession(),
+    workspace: AZURE_WORKSPACE,
+    credential: AZURE_CREDENTIAL,
+    userId: 'user-1',
+    text: 'list my VMs',
+  });
+
+  assert.equal(S.execCalls.length, 2);
+  const [login, command] = S.execCalls;
+  assert.deepEqual(login.argv.slice(0, 2), ['sh', '-c']);
+  assert.ok(!login.argv.join(' ').includes('sp-secret'), 'the secret must never be in argv');
+  assert.equal(login.options.env.AZURE_CLIENT_SECRET, 'sp-secret');
+  assert.deepEqual(command.argv, ['az', 'vm', 'list']);
+  assert.ok(!JSON.stringify(command.options.env).includes('sp-secret'));
+});
+
+test('a reused Azure sandbox is not signed in again', async () => {
+  reset();
+  S.providerResponses = [{ type: 'text', content: 'hello' }];
+
+  await handleUserMessage({
+    session: makeSession(),
+    workspace: AZURE_WORKSPACE,
+    credential: AZURE_CREDENTIAL,
+    userId: 'user-1',
+    text: 'hi',
+  });
+
+  assert.equal(S.execCalls.length, 0);
+});
+
+test('a failed sign-in removes the sandbox and tells the Operator, without calling the model', async () => {
+  reset();
+  S.provisionCreated = true;
+  S.execResults = [{ stdout: '', stderr: 'AADSTS7000215', exitCode: 1, timedOut: false }];
+
+  const { messages } = await handleUserMessage({
+    session: makeSession(),
+    workspace: AZURE_WORKSPACE,
+    credential: AZURE_CREDENTIAL,
+    userId: 'user-1',
+    text: 'list my VMs',
+  });
+
+  assert.deepEqual(kinds(messages), ['USER/TEXT/null', 'ASSISTANT/TEXT/null']);
+  assert.match(messages[1].content, /couldn't sign in to the cloud provider/);
+  assert.deepEqual(S.destroyed, [{ id: 'sess-1', sandboxContainerId: 'cid-1' }]);
+  assert.equal(S.providerCalls.length, 0);
+});
+
+test('regions are refused outside AWS and nothing runs', async () => {
+  reset();
+  S.providerResponses = [
+    { type: 'command_request', content: 'az vm list', command: 'az vm list', regions: ['all'] },
+    { type: 'text', content: 'ok' },
+  ];
+  S.classifyResults = [AZ_LIST];
+
+  const { messages } = await handleUserMessage({
+    session: makeSession(),
+    workspace: AZURE_WORKSPACE,
+    credential: AZURE_CREDENTIAL,
+    userId: 'user-1',
+    text: 'list my VMs everywhere',
+  });
+
+  assert.equal(messages[1].status, CHAT_MESSAGE_STATUS.REJECTED);
+  assert.match(messages[2].content, /"regions" argument is not available on Microsoft Azure/);
+  assert.equal(S.execCalls.length, 0);
+});
+
+test('a tool-call note written as reply text is run as the tool call it imitates', async () => {
+  reset();
+  const session = makeSession();
+  S.providerResponses = [
+    {
+      type: 'text',
+      content:
+        'Stopping the EC2 instance you just started.\n\n(called run_command: aws ec2 stop-instances --instance-ids i-1 --region ap-south-1)',
+    },
+  ];
+  S.classifyResults = [
+    verdict({
+      verdict: POLICY_VERDICTS.REQUIRE_CONFIRMATION,
+      dryRunCapable: false,
+      argv: ['aws', 'ec2', 'stop-instances', '--instance-ids', 'i-1', '--region', 'ap-south-1'],
+      verb: 'stop-instances',
+    }),
+  ];
+
+  const { messages } = await handleUserMessage({
+    session,
+    workspace: WORKSPACE,
+    credential: CREDENTIAL,
+    userId: 'user-1',
+    text: 'stop it',
+  });
+
+  // The prose becomes the explanation; the note never reaches the Operator.
+  assert.deepEqual(kinds(messages), [
+    'USER/TEXT/null',
+    'ASSISTANT/TEXT/null',
+    'ASSISTANT/COMMAND_REQUEST/PENDING_CONFIRMATION',
+  ]);
+  assert.equal(messages[1].content, 'Stopping the EC2 instance you just started.');
+  assert.equal(
+    messages[2].content,
+    'aws ec2 stop-instances --instance-ids i-1 --region ap-south-1',
+  );
+  assert.equal(
+    S.classifyCalls.at(-1).commandString,
+    'aws ec2 stop-instances --instance-ids i-1 --region ap-south-1',
+  );
 });

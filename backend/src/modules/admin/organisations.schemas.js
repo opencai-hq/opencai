@@ -21,17 +21,9 @@ const updateWorkspaceSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-// AWS-only for now -- generalize this (e.g. a discriminated union on csp) once
-// a second CSP is added.
-const workspaceCredentialSchema = z.object({
-  accessKeyId: z.string().min(1),
-  secretAccessKey: z.string().min(1),
-});
-
 module.exports = {
   createOrganisationSchema,
   updateOrganisationSchema,
   createWorkspaceSchema,
   updateWorkspaceSchema,
-  workspaceCredentialSchema,
 };

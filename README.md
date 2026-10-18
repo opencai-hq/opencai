@@ -4,7 +4,7 @@
 
 # OpenCAI
 
-**Manage your cloud by chatting with an AI agent.** OpenCAI is an open, self-hosted AIOps and
+**Manage your cloud by chatting with an AI agent.** OpenCAI is an open, self-hosted CloudOps and
 FinOps platform: ask in plain language, see the exact command, approve it, and it runs.
 
 ## Why OpenCAI
@@ -13,12 +13,14 @@ FinOps platform: ask in plain language, see the exact command, approve it, and i
   hunting, no CLI syntax to remember.
 - **You stay in control.** Anything that changes your cloud waits for your approval. Read-only
   questions are answered straight away.
+- **See it at a glance.** Describe a graph in plain language and pin it to your dashboard: cost by
+  service, spend over time, resources by state. Graphs only ever read from your cloud.
 - **Safe by design.** Every command is checked by a strict policy and runs in an isolated Docker
   sandbox, never on your server.
 - **Secure.** MFA sign-in, encrypted cloud credentials, and a full audit trail of every action.
 - **Your model, your brand.** Works with Anthropic, OpenAI, Gemini, Groq and NVIDIA. Add your own
   name and logo.
-- **Yours to host.** Source-available, runs on your own machine or server. Works with AWS today.
+- **Yours to host.** Source-available, runs on your own machine or server. Works with AWS, Azure and Google Cloud.
 
 ## Quick start
 
@@ -28,23 +30,12 @@ On Windows, run these in Git Bash.
 ```sh
 git clone https://github.com/AB527/opencai.git
 cd opencai
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
+./setup.sh
 ```
 
-Set three values:
-
-- in `backend/.env`, `JWT_SECRET` (use `openssl rand -base64 48`) and `MASTER_ENCRYPTION_KEY`
-  (use `openssl rand -base64 32`)
-- in `frontend/.env`, `VITE_API_BASE_URL=http://localhost:4000`
-
-Start it:
-
-```sh
-docker build -t opencai-sandbox:2.15.30 backend/sandbox
-docker compose up --build -d
-docker compose exec backend npm run prisma:seed
-```
+The script asks whether to use the bundled Postgres and MinIO containers or your own database and
+S3 bucket, writes the configuration, and builds and starts everything. To do the same steps by
+hand, see the [setup guide](docs/SETUP.md).
 
 Open http://localhost:8080 and sign in as `admin` / `admin`. You will be asked to set up MFA;
 change the password after that.

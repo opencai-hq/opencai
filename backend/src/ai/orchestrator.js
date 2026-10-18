@@ -1,7 +1,7 @@
 // Agent orchestrator: the integration point that drives PLAN.md's execution
 // flow by wiring together the provider adapters, the persona/system-prompt
 // service, the deterministic command policy classifier, the output sanitizer,
-// the credential mapper and the Docker sandbox.
+// the per-provider CSP modules and the Docker sandbox.
 //
 // Two rules from Task 5's security review are load-bearing here and are
 // repeated at every call site below:
@@ -17,21 +17,30 @@
 //      Docker's `Cmd`, so no shell ever parses it.
 
 const prisma = require('../config/db');
-const envelope = require('../crypto/envelope');
 const { AppError } = require('../middleware/errorHandler');
 const { ERROR_CODES } = require('../constants/errors');
 const { CHAT_MESSAGE_STATUS } = require('../constants/chatMessageStatus');
 const { AUDIT_ACTIONS, AUDIT_OUTCOMES } = require('../constants/auditActions');
 const { MAX_MODEL_TURNS_PER_MESSAGE, MAX_ORCHESTRATION_WALL_CLOCK_MS } = require('./constants');
-const { getProvider } = require('./providers');
 const { getPersona } = require('./systemPrompt.service');
 const { classify } = require('./policy/commandPolicy');
 const { POLICY_VERDICTS } = require('./policy/policyVerdicts');
-const { sanitizeOutput } = require('./sanitizer');
-const { credentialToEnv } = require('./credentials');
-const { provisionSandbox, executeInSandbox } = require('./sandbox/sandboxManager');
+const { combineOutput } = require('./sanitizer');
+const { getCsp } = require('./csp');
+const { provisionSandbox, executeInSandbox, destroySandbox } = require('./sandbox/sandboxManager');
 const { contextWindowFor } = require('./contextWindows');
 const { DEFAULT_REQUEST_LIMITS } = require('./settingsDefaults');
+const { resolveProviderConfig } = require('./providerConfig');
+const {
+  TOOL_CALL_RULES,
+  providerRulesFor,
+  fitConversation,
+  providerError,
+  toolCallNote,
+  recoverToolCall,
+  toolResultNote,
+  executionOutcome,
+} = require('./conversation');
 
 // How many prior ChatMessage rows are replayed into the model's context.
 // Deliberately local: nothing outside this orchestrator has an opinion on it.
@@ -51,31 +60,17 @@ const KIND = Object.freeze({
   REASONING: 'REASONING',
 });
 
-const KIND_TO_TOOL = Object.freeze({
-  [KIND.LOOKUP_REQUEST]: 'run_lookup',
-  [KIND.COMMAND_REQUEST]: 'run_command',
-});
-
-// Appended to every persona prompt. History replays past tool calls as plain
-// text notes (see buildHistoryFromMessages), and without this rule models
-// imitate those notes in their reply text instead of calling the tool -- the
-// command then never runs and the note is shown to the Operator as an answer.
-const TOOL_CALL_RULES = [
-  'Earlier tool calls appear in this conversation as system-written notes like "(called run_command: <command>)", each followed by a "(<tool> result)", "(<tool> failed, ...)" or "(<tool> rejected by policy)" message.',
-  'Never write such a note yourself. Writing a command in your reply does not run it: the only way to run a command is to call the run_lookup or run_command tool.',
-  'When a command fails, read the error and fix it yourself before involving the Operator. If you are unsure of the correct syntax or parameters, look them up with run_lookup and "aws <service> <operation> help" (this AWS CLI does not accept --help), then retry with a corrected command.',
-  'When a command is rejected by policy, it was not run; do not repeat it. Use a different, allowed command to get the same information.',
-  'To run the same read-only command in several AWS regions, call the tool once with the "regions" argument (a list of region names, or ["all"] for every enabled region) instead of making one call per region. Leave --region out of that command.',
-  'Global services — Cost Explorer (ce), IAM, Organizations, Route 53, and listing S3 buckets — return the same data in every region. Run them once, without "regions" (use --region us-east-1 for Cost Explorer).',
-  'Help pages are long and only partly shown to you. Prefer commands you already know; look up help only for the options you need.',
-  'Ask the Operator only for information you cannot discover with a command, such as which AWS region they mean when none is configured.',
-  "Once you have the information you need, answer the Operator's question directly in plain language.",
-].join('\n');
-
-// Hard upper bound on any one result note, wherever it is built.
-const MAX_MODEL_OUTPUT_CHARS = 12000;
+/**
+ * The full system prompt for one Workspace: the persona, the tool rules, and
+ * the provider's own CLI rules.
+ */
+function systemPromptFor(persona, csp) {
+  return `${persona.systemPrompt}\n\n${TOOL_CALL_RULES}\n${providerRulesFor(csp)}`;
+}
 
 const SANDBOX_UNAVAILABLE_TEXT = "The execution environment couldn't be started. Please try again.";
+const SIGN_IN_FAILED_TEXT =
+  "I couldn't sign in to the cloud provider with this Workspace's credentials. Ask an Administrator to check them.";
 const BUDGET_EXHAUSTED_TEXT =
   "I'm having trouble completing this within the allotted steps. Please try rephrasing or breaking your request into smaller steps.";
 const DRY_RUN_FAILED_TEXT = '(dry-run failed to execute)';
@@ -83,130 +78,6 @@ const DRY_RUN_FAILED_TEXT = '(dry-run failed to execute)';
 /* -------------------------------------------------------------------------- */
 /* Internal helpers                                                            */
 /* -------------------------------------------------------------------------- */
-
-/**
- * Resolve the singleton ChatSettings row into everything one orchestration turn
- * needs from it: a live provider module, the model/API key, and the sandbox
- * timeouts.
- */
-async function resolveProviderConfig() {
-  const settings = await prisma.chatSettings.findFirst();
-  if (!settings || !settings.provider || !settings.providerApiKeyEncrypted) {
-    throw new AppError(503, ERROR_CODES.AI_PROVIDER_NOT_CONFIGURED);
-  }
-
-  const apiKey = envelope.decrypt(settings.providerApiKeyEncrypted);
-  const provider = getProvider(settings.provider);
-
-  return {
-    provider,
-    providerName: settings.provider,
-    model: settings.model,
-    apiKey,
-    baseUrl: settings.baseUrl || undefined,
-    config: settings.config || undefined,
-    sandboxCommandTimeoutSeconds: settings.sandboxCommandTimeoutSeconds,
-    sandboxIdleTimeoutMinutes: settings.sandboxIdleTimeoutMinutes,
-    limits: requestLimits(settings.config),
-  };
-}
-
-function requestLimits(config) {
-  const positive = (value, fallback) => {
-    const n = Number(value);
-    return Number.isInteger(n) && n > 0 ? n : fallback;
-  };
-  return {
-    ...DEFAULT_REQUEST_LIMITS,
-    toolOutputChars: positive(config?.tool_output_chars, DEFAULT_REQUEST_LIMITS.toolOutputChars),
-    historyChars: positive(config?.history_chars, DEFAULT_REQUEST_LIMITS.historyChars),
-  };
-}
-
-const isToolResultNote = (entry) =>
-  entry.role === 'user' && /^\((run_lookup|run_command) /.test(entry.content);
-
-function truncateText(text, max) {
-  return text.length > max
-    ? `${text.slice(0, max)}\n[... ${text.length - max} more characters not shown]`
-    : text;
-}
-
-/**
- * Shape the conversation into one request that fits `limits`: the newest
- * output capped at toolOutputChars, older outputs shrunk to olderResultChars,
- * then the oldest turns dropped until the history fits historyChars. Nothing
- * persisted changes -- this is only what the model is sent.
- */
-function fitConversation(conversation, limits) {
-  const last = conversation[conversation.length - 1];
-  const newMessage = isToolResultNote(last)
-    ? truncateText(last.content, limits.toolOutputChars)
-    : last.content;
-
-  let history = conversation
-    .slice(0, -1)
-    .map((e) =>
-      isToolResultNote(e) ? { ...e, content: truncateText(e.content, limits.olderResultChars) } : e,
-    );
-  let total = history.reduce((sum, e) => sum + e.content.length, 0);
-  let trimmed = false;
-  while (history.length > 0 && total > limits.historyChars) {
-    total -= history[0].content.length;
-    history = history.slice(1);
-    trimmed = true;
-  }
-  // Providers such as Anthropic require the conversation to open with a user
-  // turn; trimming must not leave an assistant turn at the front.
-  while (trimmed && history.length > 0 && history[0].role !== 'user') history = history.slice(1);
-  return { history, newMessage };
-}
-
-/**
- * Turn the provider SDK's HTTP errors into messages the Operator can act on;
- * anything else is rethrown untouched (and becomes the generic 500).
- */
-function providerError(err) {
-  const status = err?.status;
-  const detail = String(err?.error?.error?.message ?? err?.message ?? '');
-  let mapped = null;
-  if (status === 413 || /request too large|maximum context|context length/i.test(detail)) {
-    mapped = new AppError(413, ERROR_CODES.AI_PROVIDER_REQUEST_TOO_LARGE);
-  } else if (status === 429) {
-    mapped = new AppError(429, ERROR_CODES.AI_PROVIDER_RATE_LIMITED);
-  } else if (status === 401 || status === 403) {
-    mapped = new AppError(502, ERROR_CODES.AI_PROVIDER_AUTH_FAILED);
-  }
-  if (!mapped) return err;
-  console.error(`[orchestrator] AI provider error ${status}: ${detail.slice(0, 300)}`);
-  return mapped;
-}
-
-function toolCallNote(kind, commandText) {
-  return { role: 'assistant', content: `(called ${KIND_TO_TOOL[kind]}: ${commandText})` };
-}
-
-/**
- * The model-facing copy of a command's output. Capped so one large output (a
- * full `help` page runs to ~2,000 lines) cannot crowd out the conversation or
- * exhaust the provider's token limits; the persisted row keeps everything.
- *
- * `outcome` is 'result', 'failed' / 'failed, exit code N', or
- * 'rejected by policy' -- the model needs to know a command did not succeed
- * to decide to check the documentation and retry.
- */
-function toolResultNote(kind, output, outcome = 'result') {
-  const text =
-    output.length > MAX_MODEL_OUTPUT_CHARS
-      ? `${output.slice(0, MAX_MODEL_OUTPUT_CHARS)}\n[... ${output.length - MAX_MODEL_OUTPUT_CHARS} more characters not shown]`
-      : output;
-  return { role: 'user', content: `(${KIND_TO_TOOL[kind]} ${outcome})\n${text}` };
-}
-
-function executionOutcome(execution) {
-  if (execution.timedOut) return 'failed, timed out';
-  return execution.exitCode === 0 ? 'result' : `failed, exit code ${execution.exitCode}`;
-}
 
 /* ---- Multi-region runs ---------------------------------------------------- */
 
@@ -236,7 +107,10 @@ function withRegionsLabel(commandText, regions) {
 }
 
 /** Why a multi-region request cannot run, or null when it can. */
-function regionsProblem(regions, argv, isReadOnly) {
+function regionsProblem(regions, argv, isReadOnly, csp) {
+  if (!csp.supportsRegions) {
+    return `the "regions" argument is not available on ${csp.label}. Run the command once without it.`;
+  }
   if (!isReadOnly) {
     return 'running in several regions is only allowed for read-only commands. Propose changes one region at a time.';
   }
@@ -425,13 +299,6 @@ function createAssistantText(createdMessages, sessionId, content) {
   });
 }
 
-/** Sanitize both streams independently and join them into one output blob. */
-function combineOutput(execution) {
-  const out = sanitizeOutput(execution?.stdout ?? '');
-  const err = execution?.stderr ? sanitizeOutput(execution.stderr) : '';
-  return err ? `${out}\n${err}` : out;
-}
-
 /**
  * The single source of the command text this orchestrator persists and audits.
  *
@@ -454,6 +321,40 @@ function hasExplanation(providerResult) {
 
 function cappedText(cap) {
   return `This session has reached its limit of ${cap} mutating commands. Start a new session to continue.`;
+}
+
+/* ---- Sandbox sign-in ------------------------------------------------------ */
+
+/**
+ * Everything a command needs from the Workspace's credential: the per-exec
+ * environment, plus a one-time sign-in for providers whose CLI cannot
+ * authenticate from the environment alone. A container that could not be
+ * signed in is destroyed, so the next message starts a new one and signs in
+ * again instead of reusing one that never worked.
+ *
+ * @returns {Promise<Record<string, string>>} the per-exec environment.
+ */
+async function signInSandbox({ session, csp, credential, containerId, created, timeoutSeconds }) {
+  const env = await csp.buildEnv(credential);
+  if (created && csp.prepareSandbox) {
+    try {
+      await csp.prepareSandbox({
+        credential,
+        exec: (argv, execEnv) =>
+          executeInSandbox(containerId, argv, { env: execEnv, timeoutSeconds }),
+      });
+    } catch (err) {
+      try {
+        await destroySandbox({ id: session.id, sandboxContainerId: containerId });
+      } catch (destroyErr) {
+        console.error(
+          `[orchestrator] could not remove unsigned sandbox for session ${session.id}: ${destroyErr.message}`,
+        );
+      }
+      throw err;
+    }
+  }
+  return env;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -484,6 +385,9 @@ async function runModelLoop({
   startedAt,
   usage = {},
 }) {
+  const csp = getCsp(workspace.csp);
+  const systemPrompt = systemPromptFor(persona, csp);
+
   for (let turn = 0; turn < MAX_MODEL_TURNS_PER_MESSAGE; turn += 1) {
     if (Date.now() - startedAt >= MAX_ORCHESTRATION_WALL_CLOCK_MS) break;
 
@@ -495,7 +399,7 @@ async function runModelLoop({
     let providerResult;
     try {
       providerResult = await providerConfig.provider.sendMessage({
-        systemPrompt: `${persona.systemPrompt}\n\n${TOOL_CALL_RULES}`,
+        systemPrompt,
         history,
         newMessage,
         model: providerConfig.model,
@@ -518,6 +422,12 @@ async function runModelLoop({
       });
     }
 
+    // A tool-call note written as reply text is the call the model meant to
+    // make; without this the command never runs and the note is the answer.
+    if (providerResult.type === 'text') {
+      providerResult = recoverToolCall(providerResult.content) ?? providerResult;
+    }
+
     // 1. Plain answer -- the model is done with this turn.
     if (providerResult.type === 'text') {
       await createAssistantText(createdMessages, session.id, providerResult.content);
@@ -530,6 +440,7 @@ async function runModelLoop({
     const result = classify({
       mode: session.mode,
       subMode: session.subMode,
+      csp: workspace.csp,
       commandString: providerResult.command,
       personaAllowedBinaries: persona.allowedBinaries,
     });
@@ -553,7 +464,7 @@ async function runModelLoop({
     const rejectionReason =
       result.verdict === POLICY_VERDICTS.REJECTED
         ? result.reason
-        : requestedRegions && regionsProblem(requestedRegions, result.argv, isReadOnly);
+        : requestedRegions && regionsProblem(requestedRegions, result.argv, isReadOnly, csp);
 
     // 2. Rejected by policy (or an invalid multi-region request) -- never
     //    executes. The reason goes back to the model so it can find an allowed
@@ -778,10 +689,14 @@ async function handleUserMessage({ session, workspace, credential, userId, text 
   const providerConfig = await resolveProviderConfig();
   const persona = await getPersona(session.mode, session.subMode);
 
+  const csp = getCsp(workspace.csp);
+
   let containerId;
+  let created;
   try {
-    ({ containerId } = await provisionSandbox(session, {
+    ({ containerId, created } = await provisionSandbox(session, {
       idleTimeoutMinutes: providerConfig.sandboxIdleTimeoutMinutes,
+      image: csp.sandboxImage,
     }));
   } catch (err) {
     console.error(
@@ -792,7 +707,21 @@ async function handleUserMessage({ session, workspace, credential, userId, text 
     return { messages: createdMessages };
   }
 
-  const env = credentialToEnv(workspace.csp, credential);
+  let env;
+  try {
+    env = await signInSandbox({
+      session,
+      csp,
+      credential,
+      containerId,
+      created,
+      timeoutSeconds: providerConfig.sandboxCommandTimeoutSeconds,
+    });
+  } catch (err) {
+    console.error(`[orchestrator] cloud sign-in failed for session ${session.id}: ${err.message}`);
+    await createAssistantText(createdMessages, session.id, SIGN_IN_FAILED_TEXT);
+    return { messages: createdMessages };
+  }
 
   // The row created above is excluded and re-appended explicitly, so it is
   // neither double-counted nor ordered by a createdAt tie.
@@ -855,6 +784,7 @@ async function confirmCommand({ session, workspace, credential, messageId, userI
   const result = classify({
     mode: session.mode,
     subMode: session.subMode,
+    csp: workspace.csp,
     commandString: message.content,
     personaAllowedBinaries: persona.allowedBinaries,
   });
@@ -939,12 +869,20 @@ async function confirmCommand({ session, workspace, credential, messageId, userI
     // the confirm-time atomic guard will then always refuse.
     session.mutatingCommandCount += 1;
 
-    containerId = (
-      await provisionSandbox(session, {
-        idleTimeoutMinutes: providerConfig.sandboxIdleTimeoutMinutes,
-      })
-    ).containerId;
-    env = credentialToEnv(workspace.csp, credential);
+    const csp = getCsp(workspace.csp);
+    const sandbox = await provisionSandbox(session, {
+      idleTimeoutMinutes: providerConfig.sandboxIdleTimeoutMinutes,
+      image: csp.sandboxImage,
+    });
+    containerId = sandbox.containerId;
+    env = await signInSandbox({
+      session,
+      csp,
+      credential,
+      containerId,
+      created: sandbox.created,
+      timeoutSeconds: providerConfig.sandboxCommandTimeoutSeconds,
+    });
 
     // argv, as an array. Never a shell string.
     execution = await executeInSandbox(containerId, result.argv, {

@@ -3,12 +3,17 @@ const MAX_MODEL_TURNS_PER_MESSAGE = 8;
 const MAX_ORCHESTRATION_WALL_CLOCK_MS = 120000;
 
 // Sandbox runtime configuration
-// A deliberately LOCAL tag, built from backend/sandbox/Dockerfile (see that
-// directory's README). It must not be an upstream-resolvable reference: if the
-// image hasn't been built, createContainer must fail loudly with "no such
-// image" rather than silently pulling the unhardened upstream aws-cli image and
-// running the sandbox as root.
-const SANDBOX_IMAGE_TAG = 'opencai-sandbox:2.15.30';
+// One image per cloud provider, each holding only that provider's CLI. These are
+// deliberately LOCAL tags, built from backend/sandbox/<provider>/Dockerfile (see
+// that directory's README). They must not be upstream-resolvable references: if
+// an image hasn't been built, createContainer must fail loudly with "no such
+// image" rather than silently pulling an unhardened upstream image and running
+// the sandbox as root. Each tag carries the version of the CLI inside it.
+const SANDBOX_IMAGE_TAGS = Object.freeze({
+  AWS: 'opencai-sandbox-aws:2.15.30',
+  AZURE: 'opencai-sandbox-azure:2.91.0',
+  GCP: 'opencai-sandbox-gcp:588.0.0',
+});
 const SANDBOX_DEFAULT_MEMORY_BYTES = 536870912; // 512 MB
 const SANDBOX_DEFAULT_NANO_CPUS = 1000000000; // 1 vCPU
 const SANDBOX_DEFAULT_PIDS_LIMIT = 64;
@@ -16,7 +21,7 @@ const SANDBOX_DEFAULT_PIDS_LIMIT = 64;
 module.exports = {
   MAX_MODEL_TURNS_PER_MESSAGE,
   MAX_ORCHESTRATION_WALL_CLOCK_MS,
-  SANDBOX_IMAGE_TAG,
+  SANDBOX_IMAGE_TAGS,
   SANDBOX_DEFAULT_MEMORY_BYTES,
   SANDBOX_DEFAULT_NANO_CPUS,
   SANDBOX_DEFAULT_PIDS_LIMIT,

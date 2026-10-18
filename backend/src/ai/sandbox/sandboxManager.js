@@ -3,7 +3,6 @@ const { Writable } = require('node:stream');
 const prisma = require('../../config/db');
 const { docker } = require('./dockerClient');
 const {
-  SANDBOX_IMAGE_TAG,
   SANDBOX_DEFAULT_MEMORY_BYTES,
   SANDBOX_DEFAULT_NANO_CPUS,
   SANDBOX_DEFAULT_PIDS_LIMIT,
@@ -85,14 +84,68 @@ function expiryFrom(idleTimeoutMinutes) {
 }
 
 /**
+ * Create and start one hardened sandbox container. Every sandbox, whatever owns
+ * it, is built here so the limits below cannot drift apart.
+ *
+ * @param {{ image: string, labels?: Record<string, string> }} options
+ * @returns {Promise<import("dockerode").Container>} the started container.
+ */
+async function createSandboxContainer({ image, labels }) {
+  const container = await docker.createContainer({
+    Image: image,
+    ...(labels ? { Labels: labels } : {}),
+    Cmd: ['sleep', 'infinity'],
+    Entrypoint: [],
+    Tty: false,
+    // Defense in depth: the image's own `USER sandbox` already pins this, but
+    // asserting it at the Docker API level means the container is non-root
+    // even if some other image ever resolves for this tag. Numeric form needs
+    // no matching /etc/passwd entry.
+    User: '10001:10001',
+    HostConfig: {
+      Memory: SANDBOX_DEFAULT_MEMORY_BYTES,
+      NanoCpus: SANDBOX_DEFAULT_NANO_CPUS,
+      PidsLimit: SANDBOX_DEFAULT_PIDS_LIMIT,
+      CapDrop: ['ALL'],
+      SecurityOpt: ['no-new-privileges'],
+      ReadonlyRootfs: true,
+      // ReadonlyRootfs makes every path unwritable, including the paths the
+      // cloud CLI needs for its own scratch/config writes. Two small, capped,
+      // noexec/nosuid tmpfs mounts keep the read-only root intact while
+      // giving the CLI somewhere to write. Nothing here survives the
+      // container, so this does not weaken the sandbox meaningfully.
+      // The home mount is owned by the sandbox user: a tmpfs given explicit
+      // options is otherwise root-owned 0755, which the non-root user cannot
+      // write to -- and the Azure and Google Cloud CLIs refuse to start
+      // without a writable config directory.
+      Tmpfs: {
+        '/tmp': 'rw,noexec,nosuid,size=64m',
+        '/home/sandbox': 'rw,noexec,nosuid,size=64m,uid=10001,gid=10001,mode=0700',
+      },
+      NetworkMode: 'bridge',
+      AutoRemove: false,
+    },
+  });
+  await container.start();
+  return container;
+}
+
+/**
  * Ensure a live sandbox container exists for this chat session, reusing the
  * existing one when it is genuinely still running.
  *
  * @param {{ id: string, sandboxContainerId: ?string, sandboxStatus: ?string }} session
- * @param {{ idleTimeoutMinutes: number }} options
- * @returns {Promise<{ containerId: string }>}
+ * @param {{ idleTimeoutMinutes: number, image: string }} options `image` is the
+ *   sandbox image of the session's cloud provider.
+ * @returns {Promise<{ containerId: string, created: boolean }>} `created` is
+ *   true when a new container was started, so the caller knows it still needs
+ *   any provider sign-in.
  */
-async function provisionSandbox(session, { idleTimeoutMinutes }) {
+async function provisionSandbox(session, { idleTimeoutMinutes, image }) {
+  if (typeof image !== 'string' || image.length === 0) {
+    throw new Error('provisionSandbox requires a sandbox image');
+  }
+
   if (session.sandboxContainerId && session.sandboxStatus === SANDBOX_STATUS.READY) {
     let stillRunning;
     try {
@@ -108,43 +161,13 @@ async function provisionSandbox(session, { idleTimeoutMinutes }) {
         where: { id: session.id },
         data: { sandboxExpiresAt: expiryFrom(idleTimeoutMinutes) },
       });
-      return { containerId: session.sandboxContainerId };
+      return { containerId: session.sandboxContainerId, created: false };
     }
   }
 
   let started = null;
   try {
-    const container = await docker.createContainer({
-      Image: SANDBOX_IMAGE_TAG,
-      Cmd: ['sleep', 'infinity'],
-      Entrypoint: [],
-      Tty: false,
-      // Defense in depth: the image's own `USER sandbox` already pins this, but
-      // asserting it at the Docker API level means the container is non-root
-      // even if some other image ever resolves for this tag. Numeric form needs
-      // no matching /etc/passwd entry.
-      User: '10001:10001',
-      HostConfig: {
-        Memory: SANDBOX_DEFAULT_MEMORY_BYTES,
-        NanoCpus: SANDBOX_DEFAULT_NANO_CPUS,
-        PidsLimit: SANDBOX_DEFAULT_PIDS_LIMIT,
-        CapDrop: ['ALL'],
-        SecurityOpt: ['no-new-privileges'],
-        ReadonlyRootfs: true,
-        // ReadonlyRootfs makes every path unwritable, including the paths the
-        // AWS CLI needs for its own scratch/config writes. Two small, capped,
-        // noexec/nosuid tmpfs mounts keep the read-only root intact while
-        // giving the CLI somewhere to write. Nothing here survives the
-        // container, so this does not weaken the sandbox meaningfully.
-        Tmpfs: {
-          '/tmp': 'rw,noexec,nosuid,size=64m',
-          '/home/sandbox': 'rw,noexec,nosuid,size=64m',
-        },
-        NetworkMode: 'bridge',
-        AutoRemove: false,
-      },
-    });
-    await container.start();
+    const container = await createSandboxContainer({ image });
     started = container;
 
     await prisma.chatSession.update({
@@ -157,7 +180,7 @@ async function provisionSandbox(session, { idleTimeoutMinutes }) {
       },
     });
 
-    return { containerId: container.id };
+    return { containerId: container.id, created: true };
   } catch (err) {
     // If the container started but its id never got persisted, nothing can ever
     // find it again -- the idle sweep only looks at rows marked 'ready'. Reap it
@@ -334,4 +357,10 @@ function startIdleSweep() {
   }, IDLE_SWEEP_INTERVAL_MS);
 }
 
-module.exports = { provisionSandbox, executeInSandbox, destroySandbox, startIdleSweep };
+module.exports = {
+  createSandboxContainer,
+  provisionSandbox,
+  executeInSandbox,
+  destroySandbox,
+  startIdleSweep,
+};

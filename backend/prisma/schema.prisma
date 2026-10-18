@@ -15,13 +15,15 @@ enum UserRole {
   OPERATOR
 }
 
-// CSP is AWS-only today; adding a provider later is just a new enum value.
+// Each value has a matching module in backend/src/ai/csp/.
 enum CloudServiceProvider {
   AWS
+  AZURE
+  GCP
 }
 
 enum ChatMode {
-  AIOPS
+  CLOUDOPS
   FINOPS
 }
 
@@ -67,9 +69,10 @@ model User {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  organisations UserOrganisation[]
-  chatSessions  ChatSession[]
-  auditLogs     AuditLog[]
+  organisations    UserOrganisation[]
+  chatSessions     ChatSession[]
+  auditLogs        AuditLog[]
+  dashboardWidgets DashboardWidget[]
 
   @@map("users")
 }
@@ -127,10 +130,11 @@ model Workspace {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
-  organisation Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  credential   WorkspaceCredential?
-  chatSessions ChatSession[]
-  auditLogs    AuditLog[]
+  organisation     Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  credential       WorkspaceCredential?
+  chatSessions     ChatSession[]
+  auditLogs        AuditLog[]
+  dashboardWidgets DashboardWidget[]
 
   @@unique([organisationId, csp, account, environment])
   @@map("workspaces")
@@ -256,4 +260,35 @@ model AgentPersona {
   updatedAt          DateTime       @updatedAt
 
   @@map("agent_personas")
+}
+
+// One graph on an Operator's own dashboard for a Workspace and mode. The saved
+// command is re-run without the model; only read-only commands are ever run.
+model DashboardWidget {
+  id              String    @id @default(cuid())
+  userId          String
+  workspaceId     String
+  mode            ChatMode
+  title           String
+  // The Operator's natural-language request this graph was authored from.
+  query           String
+  // CLI command; may contain {{start}} / {{end}} / {{end_inclusive}}.
+  commandTemplate String
+  // A DASHBOARD_PERIODS value (backend/src/constants/dashboard.js).
+  period          String
+  chartSpec       Json
+  chartHtml       String? // the AI-written page that draws the graph
+  // The last successful result; kept when a later refresh fails.
+  lastResult      Json?
+  lastRunAt       DateTime?
+  lastAttemptAt   DateTime?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId, workspaceId, mode])
+  @@map("dashboard_widgets")
 }

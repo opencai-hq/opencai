@@ -3,6 +3,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { getChatSettings, updateChatSettings } from '../../lib/adminApi';
 import { useToast } from '../../lib/ToastContext';
 import { AdminLayout } from './AdminLayout';
+import { AgentPrompts } from './AgentPrompts';
 
 // Settings the backend understands, offered as ready-made rows. `prefill` rows
 // start filled with their defaults (sent by the backend for the stored provider
@@ -97,6 +98,11 @@ function configFromRows(rows, defaults) {
   return config;
 }
 
+const SECTIONS = [
+  { key: 'model', label: 'Base Model' },
+  { key: 'prompts', label: 'Agent Prompts' },
+];
+
 const inputClass =
   'block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100';
 
@@ -174,6 +180,7 @@ export function ManageChatSettings() {
   const [loaded, setLoaded] = useState(false);
   const toast = useToast();
   const [submitting, setSubmitting] = useState(false);
+  const [section, setSection] = useState('model');
 
   useEffect(() => {
     getChatSettings(token)
@@ -223,11 +230,35 @@ export function ManageChatSettings() {
         Manage Chat Settings
       </h1>
       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-        Selects which model the AIOps/FinOps chat modules use.
+        Selects which model the CloudOps/FinOps chat modules use, and what each agent is told.
       </p>
 
+      <div
+        role="group"
+        aria-label="Settings section"
+        className="mt-6 inline-flex gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-700 dark:bg-gray-900"
+      >
+        {SECTIONS.map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setSection(key)}
+            aria-pressed={section === key}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              section === key
+                ? 'bg-teal-600 text-white'
+                : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Both sections stay mounted so switching does not discard unsaved edits. */}
       <form
         onSubmit={handleSubmit}
+        hidden={section !== 'model'}
         className="mt-6 max-w-2xl space-y-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900"
       >
         <div>
@@ -292,6 +323,10 @@ export function ManageChatSettings() {
           {loaded ? 'Save' : 'Loading…'}
         </button>
       </form>
+
+      <div hidden={section !== 'prompts'}>
+        <AgentPrompts />
+      </div>
     </AdminLayout>
   );
 }

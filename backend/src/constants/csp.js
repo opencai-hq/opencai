@@ -1,7 +1,9 @@
-// Mirrors the Prisma CloudServiceProvider enum. AWS-only today; adding a
-// provider later is just a new entry here plus a new enum value in schema.prisma.
+// Mirrors the Prisma CloudServiceProvider enum. Adding a provider is a new
+// entry here, a new enum value in schema.prisma, and a module in src/ai/csp/.
 const CSP = Object.freeze({
   AWS: 'AWS',
+  AZURE: 'AZURE',
+  GCP: 'GCP',
 });
 
 module.exports = { CSP };

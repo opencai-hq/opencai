@@ -6,7 +6,6 @@ const {
   updateOrganisationSchema,
   createWorkspaceSchema,
   updateWorkspaceSchema,
-  workspaceCredentialSchema,
 } = require('./organisations.schemas');
 
 const router = express.Router();
@@ -23,10 +22,8 @@ router.patch(
   controller.updateWorkspace,
 );
 router.delete('/:id/workspaces/:workspaceId', controller.deleteWorkspace);
-router.put(
-  '/:id/workspaces/:workspaceId/credential',
-  validate(workspaceCredentialSchema),
-  controller.setWorkspaceCredential,
-);
+// No route-level schema: the credential fields depend on the Workspace's CSP,
+// so the service validates them once it has loaded the Workspace.
+router.put('/:id/workspaces/:workspaceId/credential', controller.setWorkspaceCredential);
 
 module.exports = router;

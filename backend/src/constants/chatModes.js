@@ -1,6 +1,6 @@
 // Mirrors the Prisma ChatMode / FinOpsSubMode enums.
 const CHAT_MODES = Object.freeze({
-  AIOPS: 'AIOPS',
+  CLOUDOPS: 'CLOUDOPS',
   FINOPS: 'FINOPS',
 });
 

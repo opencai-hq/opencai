@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../lib/AuthContext';
 import { listAccessibleOrganisations, listOrganisationWorkspaces } from '../../../lib/operatorApi';
+import { cspLabel } from '../../../lib/csp';
 
 const selectClass =
   'mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 disabled:opacity-50';
@@ -16,7 +17,9 @@ export function WorkspaceSelectorForm({ onComplete }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    listAccessibleOrganisations(token).then(setOrganisations).catch((err) => setError(err.message));
+    listAccessibleOrganisations(token)
+      .then(setOrganisations)
+      .catch((err) => setError(err.message));
   }, [token]);
 
   useEffect(() => {
@@ -41,14 +44,13 @@ export function WorkspaceSelectorForm({ onComplete }) {
     [workspaces, environment],
   );
   const accountOptions = useMemo(
-    () =>
-      [
-        ...new Set(
-          workspaces
-            .filter((w) => w.environment === environment && w.csp === csp)
-            .map((w) => w.account),
-        ),
-      ],
+    () => [
+      ...new Set(
+        workspaces
+          .filter((w) => w.environment === environment && w.csp === csp)
+          .map((w) => w.account),
+      ),
+    ],
     [workspaces, environment, csp],
   );
 
@@ -117,7 +119,7 @@ export function WorkspaceSelectorForm({ onComplete }) {
             <option value="">Select cloud...</option>
             {cspOptions.map((option) => (
               <option key={option} value={option}>
-                {option}
+                {cspLabel(option)}
               </option>
             ))}
           </select>

@@ -11,6 +11,7 @@ names its source files in its footer.
 | [3.1. How a documentation lookup runs](03-1-command-lookup.png) | What happens when the model checks the AWS CLI help with `run_lookup` |
 | [4. How a proposed command is decided](04-command-decision.png) | The command policy's checks, in order, and where each command ends up |
 | [5. Commands that change resources](05-confirmation.png) | The confirmation flow for mutating commands |
+| [5.1. How a command runs in the sandbox](05-1-command-execution.png) | Container creation and reuse, per-run credentials, `docker exec`, output handling and removal |
 | [6. Setting up OpenCAI locally](06-local-setup.png) | From a fresh clone to an Operator chatting, with or without Docker for everything |
 | [7. Signing in](07-sign-in-and-mfa.png) | Password, MFA enrolment and verification, backup codes |
 | [8. Releasing a version](08-release.png) | CI, the `dev` → `release` flow, semantic-release and image publishing |
@@ -26,6 +27,8 @@ names its source files in its footer.
 ![How a proposed command is decided](04-command-decision.png)
 
 ![Commands that change resources](05-confirmation.png)
+
+![How a command runs in the sandbox](05-1-command-execution.png)
 
 ![Setting up OpenCAI locally](06-local-setup.png)
 

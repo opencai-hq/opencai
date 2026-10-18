@@ -28,6 +28,9 @@ function loadConfig() {
   const s3AccessKey = readRequired(errors, 'S3_ACCESS_KEY');
   const s3SecretKey = readRequired(errors, 'S3_SECRET_KEY');
   const s3Bucket = readRequired(errors, 'S3_BUCKET');
+  // Optional: requests are signed for this region. MinIO accepts any value;
+  // AWS S3 needs the bucket's own region.
+  const s3Region = process.env.S3_REGION || 'us-east-1';
 
   // Optional: the browser-facing URL for S3/MinIO, when it differs from the
   // internal endpoint the backend itself uses (e.g. `S3_ENDPOINT` is a
@@ -71,6 +74,7 @@ function loadConfig() {
     s3AccessKey,
     s3SecretKey,
     s3Bucket,
+    s3Region,
     s3PublicUrl,
     corsOrigin,
   });

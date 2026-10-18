@@ -70,14 +70,18 @@ services:
       # compose network's service hostnames. env_file: values are overridden
       # by environment: values of the same name, so backend/.env itself needs
       # no edits to work under both `dev.sh` and `docker compose up`.
-      DATABASE_URL: postgresql://opencai:opencai@postgres:5432/opencai?schema=public
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: opencai
-      S3_SECRET_KEY: opencai12345
-      S3_BUCKET: opencai
+      # The defaults point at the bundled postgres and minio services. To use
+      # your own database or bucket, run ./setup.sh: it puts the OPENCAI_*
+      # values in the root .env and switches the matching service off.
+      DATABASE_URL: ${OPENCAI_DATABASE_URL:-postgresql://opencai:opencai@postgres:5432/opencai?schema=public}
+      S3_ENDPOINT: ${OPENCAI_S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY: ${OPENCAI_S3_ACCESS_KEY:-opencai}
+      S3_SECRET_KEY: ${OPENCAI_S3_SECRET_KEY:-opencai12345}
+      S3_BUCKET: ${OPENCAI_S3_BUCKET:-opencai}
+      S3_REGION: ${OPENCAI_S3_REGION:-us-east-1}
       # Browser-facing URL for uploaded branding assets -- minio:9000 is only
       # resolvable on the compose network, not from a browser on the host.
-      S3_PUBLIC_URL: http://localhost:9000
+      S3_PUBLIC_URL: ${OPENCAI_S3_PUBLIC_URL:-http://localhost:9000}
       # Frontend (nginx, :8080) and backend (:4000) are different origins
       # under compose; without this, NODE_ENV=production below makes CORS
       # reject every browser request from the frontend.
@@ -87,11 +91,15 @@ services:
       # below regardless of backend/.env's own PORT (which still governs
       # dev.sh).
       PORT: "4000"
+    # `required: false` lets the backend start when setup.sh has switched a
+    # bundled service off in favour of your own (needs Docker Compose 2.20+).
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
       minio-init:
         condition: service_completed_successfully
+        required: false
     restart: unless-stopped
     security_opt:
       - "no-new-privileges:true"
@@ -103,9 +111,9 @@ services:
       # containers via dockerode. Mounting the host's socket lets it create
       # those as sibling containers on the host Docker daemon. This grants the
       # backend container effective host-level Docker control -- a real
-      # operational trade-off, not hidden here. The sandbox image itself
-      # (opencai-sandbox:2.15.30, see backend/sandbox/README.md) must still be
-      # built on the host separately; it is not built by this compose file.
+      # operational trade-off, not hidden here. The sandbox images themselves
+      # (opencai-sandbox-<provider>, see backend/sandbox/README.md) must still
+      # be built on the host separately; they are not built by this compose file.
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "4000:4000"

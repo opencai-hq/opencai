@@ -17,3 +17,8 @@ app.listen(config.port, () => {
 // live sweep timer against a real (or absent) Docker daemon.
 const { startIdleSweep } = require('./ai/sandbox/sandboxManager');
 startIdleSweep();
+
+// Dashboard sandboxes are tracked in memory, so anything a previous process
+// left running is removed here before idle ones are reaped on a timer.
+const { startDashboardSandboxReaper } = require('./ai/sandbox/dashboardSandboxPool');
+startDashboardSandboxReaper();

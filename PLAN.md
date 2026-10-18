@@ -37,15 +37,16 @@ Every module folder contains its own `*.controller.js`, `*.service.js`, `*.route
   - **Manage Operators** — create/list/update/deactivate Operator accounts, assign roles, and assign which Organisation(s) each Operator can access (populates their "Business" dropdown).
   - **Manage Chats** — read-only view over every chat conversation in the system (all Operators, all Administrators), for oversight/audit purposes. Backed by a `ChatMessage`/`ChatSession` table the chat module writes to.
   - **Manage Chat Settings** — model selection and related chat config, stored in a `ChatSettings` table.
-  - **Manage Organisations** — a list of client Organisations. Selecting one opens its detail view: editable **Name**, **Address**, **Phone**, and — nested inside that same view — the list of **Workspaces** belonging to this Organisation. A Workspace is the tuple **Organisation → Cloud Service Provider (CSP) → Account → Environment**; from within an Organisation's detail view, Administrators add a Workspace by selecting a CSP and naming an Account and Environment, then attach credentials to it (e.g. AWS access key ID + secret access key, stored via the envelope-encryption helper — never plaintext). CSP is currently AWS-only; build the CSP field as a selectable enum/dropdown so adding a second provider later is just adding an option, not restructuring the model.
+  - **Manage Organisations** — a list of client Organisations. Selecting one opens its detail view: editable **Name**, **Address**, **Phone**, and — nested inside that same view — the list of **Workspaces** belonging to this Organisation. A Workspace is the tuple **Organisation → Cloud Service Provider (CSP) → Account → Environment**; from within an Organisation's detail view, Administrators add a Workspace by selecting a CSP and naming an Account and Environment, then attach credentials to it (e.g. AWS access key ID + secret access key, stored via the envelope-encryption helper — never plaintext). CSP is a selectable enum/dropdown (AWS, Azure, Google Cloud); adding another provider is adding an option plus its module in `backend/src/ai/csp/`, not restructuring the model.
   - **Manage Branding** — this instance's own white-label branding, separate from any client Organisation: display name, logo, and the login page's left-panel image. All three uploads go through `backend/src/storage/` to the S3-compatible bucket; store the resulting object URL/key in an `InstanceBranding` table (a singleton row, not per-Organisation).
-- `modules/chat/` — the natural-language chat interface that drives FinOps/AIOps commands, scoped to a selected Workspace. Persists every message to the chat history tables so `modules/admin`'s Manage Chats view can read it. Reads active model config from the `ChatSettings` table.
+- `modules/chat/` — the natural-language chat interface that drives FinOps/CloudOps commands, scoped to a selected Workspace. Persists every message to the chat history tables so `modules/admin`'s Manage Chats view can read it. Reads active model config from the `ChatSettings` table.
+- `modules/dashboard/` — an Operator's own graphs for a Workspace and mode (CloudOps or FinOps; the FinOps dashboard is not split by sub-mode). `POST /widgets/preview` asks the AI to turn a plain-language request into a read-only CLI command plus a chart definition and runs it once; `POST /widgets` saves it; `POST /widgets/:id/refresh` re-runs the saved command. See "Dashboard graphs" under the agent execution flow.
 - `modules/operator/` — day-to-day actions scoped to the Operator role's permissions, and workspace-scoped data lookups (CSP/Account/Environment options within the Operator's Organisation) for populating the dashboard's workspace-selection dropdowns.
 
 ### Other backend structure
 
 - `middleware/` — auth guard (JWT verification), RBAC role-check middleware, error handler, request validation.
-- `constants/` — roles, error codes/messages, shared enums (MFA status, module names, CSP list — currently just `aws`).
+- `constants/` — roles, error codes/messages, shared enums (MFA status, module names, CSP list — `AWS`, `AZURE`, `GCP`).
 - `crypto/` — envelope encryption helper for stored cloud credentials, AES-256-GCM with a data key wrapped by a master key from env. Encrypt/decrypt utilities with unit tests. Also encrypt the TOTP secret at rest with this helper.
 - `config/` — env loading and validation at boot, fail fast if a required var is missing.
 
@@ -113,7 +114,7 @@ A landing screen presenting selectable sections (cards, tiles, or a side menu �
 - **Manage Operators** — create/list/update/deactivate Operators.
 - **Manage Chats** — browse chat history across all users; searchable/filterable by user and Workspace if straightforward to add, otherwise a simple chronological list is fine for scaffolding.
 - **Manage Chat Settings** — model selection and related chat configuration.
-- **Manage Organisations** — list of client Organisations; open one to edit its Name, Address, and Phone, and to manage its nested list of Workspaces (add/edit, including attaching CSP credentials). CSP dropdown currently offers only **AWS**.
+- **Manage Organisations** — list of client Organisations; open one to edit its Name, Address, and Phone, and to manage its nested list of Workspaces (add/edit, including attaching CSP credentials). CSP dropdown offers **AWS**, **Azure** and **Google Cloud**.
 - **Manage Branding** — edit this instance's own display name, upload/replace its logo, upload/replace the login page's left-panel image.
 
 ### Operator dashboard
@@ -124,22 +125,22 @@ A **left sidebar**, top to bottom:
    - Selecting **On-Prem** replaces the rest of the sidebar content with a simple "Coming Soon" message.
    - Selecting **Cloud** (default) shows the rest of the sidebar as described below.
 2. **Workspace summary card** (visible once a Workspace has been chosen) — a small 2x2 card labelled **"Choose your Workspace"** with an edit icon, showing the four resolved values as read-only labels: **Business** (the Organisation name), **Environment**, **Cloud Provider** (CSP), **Account / Subscription**. Clicking the edit icon reopens the full selector described below.
-3. **Mode list** — below the workspace card, the two mode entries: **AIOps** and **FinOps** (icons + labels).
+3. **Mode list** — below the workspace card, the two mode entries: **CloudOps** and **FinOps** (icons + labels).
 4. **Recent History** — below the mode list, the 5 most recent chat sessions, then a **"Show all →"** link (see below).
 
 #### Workspace selection (first-time, inline in main content)
 
-Before a Workspace is chosen, the main content area shows an inline **"Choose your Workspace"** card with a short instruction line and a 2x2 grid of dropdowns in this order: **Business** (a dropdown of the Organisations this Operator has access to), **Environment**, **Cloud Provider** (CSP — AWS-only for now), **Account / Subscription** (populated once CSP is chosen). Once all four are set, this card collapses into the sidebar summary card described above and the chat interface becomes active.
+Before a Workspace is chosen, the main content area shows an inline **"Choose your Workspace"** card with a short instruction line and a 2x2 grid of dropdowns in this order: **Business** (a dropdown of the Organisations this Operator has access to), **Environment**, **Cloud Provider** (CSP — AWS, Azure or Google Cloud), **Account / Subscription** (populated once CSP is chosen). Once all four are set, this card collapses into the sidebar summary card described above and the chat interface becomes active.
 
 #### Session header
 
 Above the chat area: the current session's ID shown as copyable text (small copy icon), and a **"New Session"** button that starts a fresh `ChatSession` for the current mode/sub-mode while keeping the same Workspace selection.
 
-#### AIOps mode chat screen
+#### CloudOps mode chat screen
 
-Selecting **AIOps** opens an empty chat screen in the main content area:
+Selecting **CloudOps** opens an empty chat screen in the main content area:
 
-- Header: **"Hi, I'm AIOps Agent ⚡"** with a short one-line description underneath (e.g. "I can help you with cloud operations including creating, updating, and deleting resources.").
+- Header: **"Hi, I'm CloudOps Agent ⚡"** with a short one-line description underneath (e.g. "I can help you with cloud operations including creating, updating, and deleting resources.").
 - The workspace summary card (or the inline selector, if not yet chosen) sits between the header and the chat bar.
 - Chat input bar below that.
 - Below the chat bar: a row of **suggested-prompt pill buttons** — short example commands such as "Create an EC2 instance", "Start an EC2 instance", "Create EBS volume", "Create a new S3 bucket". Clicking a pill sends that text as the first chat message.
@@ -148,7 +149,7 @@ Selecting **AIOps** opens an empty chat screen in the main content area:
 
 Selecting **FinOps** shows a similar header ("Hi, I'm FinOps Agent 📊" + a one-line description), but structured the other way around:
 
-- **Above** the chat bar (not below, unlike AIOps): a grid of **4 selectable sub-mode cards** under a **"Select Your FinOps Agent"** heading, each with an emoji above the title and a short description below the title:
+- **Above** the chat bar (not below, unlike CloudOps): a grid of **4 selectable sub-mode cards** under a **"Select Your FinOps Agent"** heading, each with an emoji above the title and a short description below the title:
   1. 🏷️ **Tag Compliance** — manage tags.
   2. 📊 **Cost Analytics** — analyze costs.
   3. ♻️ **Waste Management** — unused resources.
@@ -164,17 +165,17 @@ Below the 5 most recent sessions in the sidebar, the **"Show all →"** link ope
 
 ## How the AI performs operations (agent execution flow)
 
-This is the core mechanism behind both AIOps and FinOps chat — spell this out clearly in the actual implementation, not just as a vague "call an LLM" step.
+This is the core mechanism behind both CloudOps and FinOps chat — spell this out clearly in the actual implementation, not just as a vague "call an LLM" step.
 
 The model is **not** restricted to a fixed catalogue of pre-defined functions. Instead it operates the way a human operator would: it has access to a **shell** with the relevant CLI tools installed (`aws` CLI to start, more per-CSP tools as providers are added), and if it's unsure of the exact syntax for something, it can look it up (e.g. `aws <service> <command> --help`, or a curated local copy of CLI docs) before running the real command. Everything that makes this safe lives in the execution layer around the model, not in the model's own judgement — see Guardrails below.
 
-1. **Context assembly.** When an Operator sends a chat message, the `chat` module resolves the full context: the selected Organisation, the selected Workspace (CSP + Account + Environment), the Mode (AIOps, or FinOps + which of the 4 sub-modes), and the conversation history for that chat session.
+1. **Context assembly.** When an Operator sends a chat message, the `chat` module resolves the full context: the selected Organisation, the selected Workspace (CSP + Account + Environment), the Mode (CloudOps, or FinOps + which of the 4 sub-modes), and the conversation history for that chat session.
 
 2. **Sandbox provisioning.** The backend spins up (or reuses, per-session) an isolated, ephemeral execution sandbox (a locked-down container — see Guardrails) for this chat session. The sandbox has the CLI tools installed but no credentials and no network access yet.
 
 3. **Credential scoping.** The backend decrypts (via the envelope-encryption helper) only the `WorkspaceCredential` tied to the exact Account/Environment currently selected, and injects it into the sandbox as scoped environment variables/config — never into the LLM prompt itself, and never any broader than this one Workspace.
 
-4. **Mode/sub-mode system prompt.** Selecting AIOps, or a specific FinOps sub-mode (Tag Compliance, Cost Analytics, Waste Management, Cost Optimisation), determines a distinct **system prompt ("persona")** for the LLM — its framing, tone, and scope of what it should and shouldn't attempt, plus the list of CLI tools available to it in this mode and the escalation rule (see Guardrails: destructive commands always pause for confirmation). Store these system prompts as data (a `mode`/`sub_mode` keyed table, editable later from Manage Chat Settings) rather than hardcoding them, so tuning a persona doesn't require a code change.
+4. **Mode/sub-mode system prompt.** Selecting CloudOps, or a specific FinOps sub-mode (Tag Compliance, Cost Analytics, Waste Management, Cost Optimisation), determines a distinct **system prompt ("persona")** for the LLM — its framing, tone, and scope of what it should and shouldn't attempt, plus the list of CLI tools available to it in this mode and the escalation rule (see Guardrails: destructive commands always pause for confirmation). Store these system prompts as data (a `mode`/`sub_mode` keyed table, editable later from Manage Chat Settings) rather than hardcoding them, so tuning a persona doesn't require a code change.
 
 5. **Model call.** The backend sends: the resolved system prompt + the conversation history + the new user message, to whichever model is configured in `ChatSettings`. Wrap the provider call behind an abstraction in `backend/src/ai/` so swapping models/providers is a config change, not a rewrite.
 
@@ -197,15 +198,28 @@ The model is **not** restricted to a fixed catalogue of pre-defined functions. I
 
 11. **Persistence.** Every step in the exchange — the Operator's input, each command proposed (lookup or execution), the confirm/cancel decision, the raw sanitized output, and the final natural-language response — is written to `ChatSession`/`ChatMessage` (for the admin Manage Chats view) and to `AuditLog` (actor, Workspace, command, outcome), independent of the chat UI.
 
+### Dashboard graphs
+
+The Operator view has a two-icon toggle at the top right of the main area: a robot for the mode's chat and a chart for its dashboard. The choice is kept in the URL (`?view=dashboard&mode=...`). The dashboard is a grid of graphs the Operator has added for the selected Workspace and mode; it is personal to that Operator.
+
+- **Adding a graph.** The Operator describes it in plain language. The model may run read-only commands to see real output, then answers with a graph definition: a command template, a period, and a chart definition (chart type, a JMESPath `rowsPath` over the command's JSON output, and which fields are x, y and series) that turns the output into rows, followed by a small HTML page that draws those rows. The backend proves the definition by running it, and sends a failure back to the model to fix. The Operator sees the graph and the command before saving.
+- **Drawing a graph.** There are no built-in chart components: each graph is drawn by the page the model wrote for it (plain HTML, CSS and JavaScript, no libraries). The page is untrusted, so the browser shows it in a sandboxed frame built from text, with no access to the app or its sign-in token and no network; the app page itself forbids any frame from loading an address. The frame is handed the stored rows, the unit and the light or dark colours. If the page fails, the graph shows its rows as a table instead. The model is told what a finished graph has (a smooth curve for values over time, light grid lines, a legend, a tooltip on hover that a click pins) and is shown one complete page of that standard. **Redraw with AI** on a graph has the model write a new page from the rows the graph already holds, without running its command.
+- **Refreshing a graph does not use the model.** A saved graph is re-run deterministically: fill in the dates → `classify()` → run in the sandbox → sanitize → parse JSON → apply `rowsPath` → store the rows. It works with no AI provider configured.
+- **Read-only, always.** A dashboard command runs only if the policy returns `ALLOW_READONLY`, checked on the command as it will actually run and on every run. There is no confirmation flow on dashboards: anything else is refused and audited.
+- **Dates are never saved.** A command template holds `{{start}}`, `{{end}}` (the day after today, for exclusive end dates) or `{{end_inclusive}}`; they are filled from the graph's period (last 7/30/90 days, month to date, last 6/12 months) each time it runs. Only a `YYYY-MM-DD` date is ever substituted.
+- **Freshness.** Each graph stores its last result and shows it at once. Opening the dashboard re-runs graphs last attempted more than an hour ago, two at a time; each graph and the dashboard have a refresh button. A failed refresh keeps the previous result and shows the reason.
+- **Sandbox.** Dashboards have no chat session, so their sandboxes are tracked in memory: one container per Operator and Workspace, labelled `opencai.sandbox=dashboard`, removed after 10 idle minutes, and any left by a previous process removed at startup.
+- **Limits.** 12 graphs per dashboard, 2 concurrent runs per Operator, 1,000 rows and 8 series per graph (smaller categories are folded into "Other"). No multi-region graphs. Google Cloud has no cost data through `gcloud`, so cost graphs are not available there.
+
 ## Guardrails
 
 Because the model can run arbitrary shell commands rather than picking from a fixed set of functions, every safety property here comes from the layer *around* the model — the model's own judgement is never the thing standing between it and a destructive action.
 
 1. **Sandboxed, ephemeral execution.** Commands never run on the backend host. Each chat session gets its own short-lived, isolated container (or equivalent) with only the required CLI tools installed. It's destroyed/recycled after the session ends or after a timeout, so nothing persists between sessions by default.
-2. **Binary allowlist, not a denylist.** The sandbox only has the specific CLI tools it needs (`aws` today, more per-CSP tools as they're added) — not a general-purpose shell with `bash`, `python`, `curl` to arbitrary hosts, package managers, etc. If it isn't an allowlisted binary, the policy layer rejects the command before it reaches the sandbox at all.
+2. **Binary allowlist, not a denylist.** The sandbox only has the specific CLI tools it needs (one of `aws`, `az` or `gcloud`, in a separate image per CSP) — not a general-purpose shell with `bash`, `python`, `curl` to arbitrary hosts, package managers, etc. If it isn't an allowlisted binary, the policy layer rejects the command before it reaches the sandbox at all.
 3. **Least-privilege, scoped credentials.** The credentials injected per session are the ones attached to that specific Workspace only, and should themselves carry a CSP-side IAM policy scoped to what that mode/sub-mode is meant to do (e.g. a FinOps analytics session's IAM role has read-only billing/resource permissions, full stop — the shell being flexible doesn't mean the underlying credential is).
 4. **Deterministic command classification.** Read-only vs. mutating is decided by code (pattern-matching the command against known safe verbs, dry-run flags, etc.), not by asking the model to self-report. This is what the confirmation gate keys off of, so a manipulated or confused model can't talk its way past it.
-5. **Human confirmation before any mutating command.** No create/update/delete/terminate/stop action — in AIOps or in FinOps Waste Management — executes without the Operator explicitly confirming the literal command shown to them first.
+5. **Human confirmation before any mutating command.** No create/update/delete/terminate/stop action — in CloudOps or in FinOps Waste Management — executes without the Operator explicitly confirming the literal command shown to them first.
 6. **Dry-run first, where available.** For tools that support it (e.g. `--dry-run` on many `aws` subcommands, `terraform plan` before `apply`), the policy layer should prefer forcing a dry-run pass and showing the resulting plan/diff before allowing the real confirmed execution.
 7. **Session-level resource and spend caps.** Independent of anything the model decides, enforce hard limits per session/Workspace — e.g. a maximum number of resources created, or a spend ceiling — checked server-side before executing a confirmed mutating command, so a runaway or manipulated conversation can't scale damage indefinitely.
 8. **Network egress restriction.** The sandbox can reach the specific CSP's API endpoints only — no general internet access, no reaching the doc-lookup source through anything other than the fixed, curated path described below. This closes off both exfiltration and "the model was tricked by content it found on the open web."
@@ -261,7 +275,7 @@ This plan is intentionally big — don't try to build all of it in a single sitt
 3. **Phase 2 — Auth & MFA.** `modules/open` (health), `modules/auth` (login, TOTP enrollment/verification, backup codes, change password), `middleware`, `constants`, `crypto` envelope-encryption helper with tests. Seed the master `admin` user. Confirm end-to-end: login → MFA → JWT issued.
 4. **Phase 3 — Frontend shell.** Login page (split-screen layout), MFA screens, top nav bar (logo, settings/theme, profile menu), routing/redirect to a placeholder Dashboard. No admin/operator-specific screens yet.
 5. **Phase 4 — Admin modules.** `modules/admin` (Manage Administrators, Manage Operators, Manage Organisations with nested Workspaces, Manage Chat Settings, Manage Branding, Manage Chats read-only view) plus their frontend screens.
-6. **Phase 5 — Operator dashboard & chat UI.** Sidebar (Cloud/On-Prem toggle, workspace selector, mode list, recent history), AIOps and FinOps chat screens, Chat History full-page view with search.
+6. **Phase 5 — Operator dashboard & chat UI.** Sidebar (Cloud/On-Prem toggle, workspace selector, mode list, recent history), CloudOps and FinOps chat screens, Chat History full-page view with search.
 7. **Phase 6 — AI agent execution.** `backend/src/ai/` provider abstraction, the sandboxed shell execution environment, the CLI binary allowlist and command-classification policy layer, the doc-lookup path, the system-prompt-per-mode mechanism, the confirm-before-execute gate for mutating commands, session-level resource/spend caps, and persistence to chat history + audit log.
 8. **Phase 7 — Docker packaging.** `docker-compose.yml` (postgres, minio, backend, frontend) for the distributable, prod-like run, verified as a full `docker compose up` from a clean checkout.
 9. **Phase 8 — Branching & release automation.** Set up `dev`/`release` branches, semantic-release config, and the `release.yml` GitHub Actions workflow described below.

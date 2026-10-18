@@ -222,3 +222,44 @@ test('strips terminal escape sequences, including ones splitting a key ID', () =
   );
   assert.equal(sanitizeOutput('key AKIA\x1b[1mIOSFODNN7EXAMPLE'), 'key [REDACTED]');
 });
+
+test('redacts Google access tokens and JWTs', () => {
+  const jwt =
+    'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJodHRwczovL21hbmFnZW1lbnQifQ.c2lnbmF0dXJl';
+  const out = sanitizeOutput(`token ya29.a0AfH6SMBx-abc_123 and ${jwt} end`);
+  assert.equal(out, 'token [REDACTED] and [REDACTED] end');
+});
+
+test('redacts Azure storage connection strings and SAS signatures', () => {
+  const out = sanitizeOutput(
+    'DefaultEndpointsProtocol=https;AccountName=acme;AccountKey=abc123+/==;EndpointSuffix=core.windows.net\n' +
+      'https://acme.blob.core.windows.net/c/b?sv=2022-11-02&sig=AbC%2Bdef%3D&se=2026-01-01',
+  );
+  assert.ok(out.includes('AccountName=acme;AccountKey=[REDACTED];EndpointSuffix'));
+  assert.ok(out.includes('&sig=[REDACTED]&se=2026-01-01'));
+  assert.ok(!out.includes('abc123'));
+  assert.ok(!out.includes('AbC%2Bdef'));
+});
+
+test('redacts snake_case and Azure-style JSON secret fields', () => {
+  const input = JSON.stringify(
+    {
+      client_secret: 'sp-secret',
+      access_token: 'tok',
+      private_key: '-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n',
+      connectionString: 'Endpoint=sb://x',
+      primaryKey: 'pk',
+      secondary_key: 'sk',
+      client_email: 'svc@acme.iam.gserviceaccount.com',
+      name: 'says "hi"',
+    },
+    null,
+    2,
+  );
+  const out = sanitizeOutput(input);
+  for (const leaked of ['sp-secret', '"tok"', 'MIIE', 'sb://x', '"pk"', '"sk"']) {
+    assert.ok(!out.includes(leaked), leaked);
+  }
+  assert.ok(out.includes('svc@acme.iam.gserviceaccount.com'));
+  assert.ok(out.includes('says \\"hi\\"'));
+});

@@ -76,7 +76,9 @@ inject('./dockerClient', { docker: fakeDocker });
 inject('../../config/db', fakePrisma);
 
 const { provisionSandbox, executeInSandbox } = require('./sandboxManager');
-const { SANDBOX_IMAGE_TAG } = require('../constants');
+const { SANDBOX_IMAGE_TAGS } = require('../constants');
+
+const IMAGE = SANDBOX_IMAGE_TAGS.AWS;
 
 /** Build a Docker multiplexed frame: 1 = stdout, 2 = stderr. */
 function frame(type, text) {
@@ -248,12 +250,12 @@ test('createContainer pins a non-root user and the full hardening set', async ()
 
   await provisionSandbox(
     { id: 'sess-1', sandboxContainerId: null, sandboxStatus: null },
-    { idleTimeoutMinutes: 30 },
+    { idleTimeoutMinutes: 30, image: IMAGE },
   );
 
   const cfg = dockerCalls.created;
   assert.equal(cfg.User, '10001:10001', 'must not run as root');
-  assert.equal(cfg.Image, SANDBOX_IMAGE_TAG);
+  assert.equal(cfg.Image, IMAGE);
   assert.equal(cfg.HostConfig.ReadonlyRootfs, true);
   assert.deepEqual(cfg.HostConfig.CapDrop, ['ALL']);
   assert.deepEqual(cfg.HostConfig.SecurityOpt, ['no-new-privileges']);
@@ -261,16 +263,46 @@ test('createContainer pins a non-root user and the full hardening set', async ()
   assert.ok(cfg.HostConfig.NanoCpus > 0);
   assert.ok(cfg.HostConfig.PidsLimit > 0);
   assert.equal(cfg.HostConfig.NetworkMode, 'bridge');
+  // The CLIs need a home they can write to; it must stay noexec and be owned
+  // by the sandbox user, since a tmpfs with explicit options is root-owned.
+  assert.match(cfg.HostConfig.Tmpfs['/home/sandbox'], /noexec/);
+  assert.match(cfg.HostConfig.Tmpfs['/home/sandbox'], /uid=10001,gid=10001,mode=0700/);
   // Credentials must never be baked into the container.
   assert.equal(cfg.Env, undefined);
 });
 
-test('the sandbox image tag is a local tag, not an upstream-resolvable reference', () => {
-  assert.equal(SANDBOX_IMAGE_TAG, 'opencai-sandbox:2.15.30');
-  assert.ok(
-    !SANDBOX_IMAGE_TAG.includes('/'),
-    'a registry path could silently pull the unhardened upstream image',
+test('uses the image it is given, so each cloud provider gets its own sandbox', async () => {
+  dockerCalls.created = null;
+
+  const result = await provisionSandbox(
+    { id: 'sess-1', sandboxContainerId: null, sandboxStatus: null },
+    { idleTimeoutMinutes: 30, image: SANDBOX_IMAGE_TAGS.GCP },
   );
+
+  assert.equal(dockerCalls.created.Image, SANDBOX_IMAGE_TAGS.GCP);
+  assert.equal(result.created, true);
+});
+
+test('refuses to provision without an image', async () => {
+  await assert.rejects(
+    () =>
+      provisionSandbox(
+        { id: 'sess-1', sandboxContainerId: null, sandboxStatus: null },
+        { idleTimeoutMinutes: 30 },
+      ),
+    { message: 'provisionSandbox requires a sandbox image' },
+  );
+});
+
+test('every sandbox image tag is a local tag, not an upstream-resolvable reference', () => {
+  assert.deepEqual(Object.keys(SANDBOX_IMAGE_TAGS).sort(), ['AWS', 'AZURE', 'GCP']);
+  for (const tag of Object.values(SANDBOX_IMAGE_TAGS)) {
+    assert.match(tag, /^opencai-sandbox-[a-z]+:[\d.]+$/);
+    assert.ok(
+      !tag.includes('/'),
+      'a registry path could silently pull the unhardened upstream image',
+    );
+  }
 });
 
 test('removes the container when it started but the row could not be persisted', async () => {
@@ -281,7 +313,7 @@ test('removes the container when it started but the row could not be persisted',
     () =>
       provisionSandbox(
         { id: 'sess-2', sandboxContainerId: null, sandboxStatus: null },
-        { idleTimeoutMinutes: 30 },
+        { idleTimeoutMinutes: 30, image: IMAGE },
       ),
     /db write failed/,
     'the original error must not be masked by cleanup',
@@ -300,7 +332,7 @@ test('reuses a live container instead of creating a new one', async () => {
 
   const result = await provisionSandbox(
     { id: 'sess-3', sandboxContainerId: 'existing-123', sandboxStatus: 'ready' },
-    { idleTimeoutMinutes: 30 },
+    { idleTimeoutMinutes: 30, image: IMAGE },
   );
 
   assert.equal(result.containerId, 'existing-123');

@@ -8,12 +8,13 @@
 const { parse } = require('shell-quote');
 
 const { POLICY_VERDICTS } = require('./policyVerdicts');
-const {
-  READONLY_PREFIXES,
-  MUTATING_PREFIXES,
-  MUTATING_EXACT_OPERATIONS,
-  DRY_RUN_SUPPORTED_EC2_OPERATIONS,
-} = require('./patterns/aws');
+const { getCsp } = require('../csp');
+
+const VERDICT_FOR_KIND = Object.freeze({
+  lookup: POLICY_VERDICTS.ALLOW_LOOKUP,
+  readonly: POLICY_VERDICTS.ALLOW_READONLY,
+  mutating: POLICY_VERDICTS.REQUIRE_CONFIRMATION,
+});
 
 function reject(reason, argv = [], binary = null) {
   return {
@@ -26,23 +27,28 @@ function reject(reason, argv = [], binary = null) {
   };
 }
 
-function startsWithAny(operation, prefixes) {
-  return prefixes.some((prefix) => operation.startsWith(prefix));
-}
-
 /**
  * Classify a proposed shell command.
  *
  * `mode` / `subMode` are accepted for logging and future extensibility; they do
  * not influence classification today. The only persona-derived input that
  * matters here is `personaAllowedBinaries`, already resolved by the caller.
+ * `csp` is the Workspace's cloud provider (a `CSP` value): it fixes the one
+ * binary that may run and the grammar its commands are read with.
  *
  * @returns {{ verdict: string, reason: string|null, dryRunCapable: boolean,
  *             argv: string[], binary: string|null, verb: string|null }}
  */
-function classify({ mode, subMode, commandString, personaAllowedBinaries }) {
+function classify({ mode, subMode, csp, commandString, personaAllowedBinaries }) {
   void mode;
   void subMode;
+
+  let provider;
+  try {
+    provider = getCsp(csp);
+  } catch {
+    return reject('Unsupported cloud provider');
+  }
 
   // 1. Tokenize. Anything shell-quote cannot make sense of is rejected.
   if (typeof commandString !== 'string') {
@@ -71,7 +77,7 @@ function classify({ mode, subMode, commandString, personaAllowedBinaries }) {
   const argv = tokens;
 
   // 3. Defense in depth. Every token is a plain string by now, but backticks
-  //    and $( have no legitimate use in an AWS CLI argument. Rejecting them
+  //    and $( have no legitimate use in a cloud CLI argument. Rejecting them
   //    keeps this classifier safe even if some future caller ever hands the
   //    result to a real shell (today's sandbox execs argv directly).
   if (argv.some((token) => token.includes('`') || token.includes('$('))) {
@@ -83,88 +89,31 @@ function classify({ mode, subMode, commandString, personaAllowedBinaries }) {
     return reject('Empty command');
   }
 
-  // 5. Binary allowlist.
+  // 5. Binary allowlist. The binary must be the Workspace's own provider CLI
+  //    and one this persona is allowed to run.
   const binary = argv[0];
   const allowedBinaries = Array.isArray(personaAllowedBinaries) ? personaAllowedBinaries : [];
-  if (!allowedBinaries.includes(binary)) {
+  if (binary !== provider.binary || !allowedBinaries.includes(binary)) {
     return reject(`Binary "${binary}" is not allowed in this mode`, argv, binary);
   }
 
-  // 6. --help is always a lookup: the AWS CLI prints locally bundled usage
-  //    text without touching the network or mutating anything, whatever verb
-  //    it is attached to and whether or not that verb is recognised.
-  if (argv.includes('--help')) {
-    return {
-      verdict: POLICY_VERDICTS.ALLOW_LOOKUP,
-      reason: null,
-      dryRunCapable: false,
-      argv,
-      binary,
-      verb: argv[1] ?? null,
-    };
+  // 6. Classify the operation with the provider's grammar. Default-deny:
+  //    anything it does not positively recognise as help, read-only or
+  //    mutating comes back as a rejection -- never assumed safe. This is the
+  //    single most important rule in this file.
+  const operation = provider.classifyOperation(argv);
+  if (operation.reject) {
+    return reject(operation.reject, argv, binary);
   }
 
-  // 6b. `help` is how AWS CLI v2 prints documentation (it rejects `--help`).
-  //     It is a help request only as the final token directly after the
-  //     binary, service or operation -- `aws help`, `aws ec2 help`,
-  //     `aws ec2 describe-instances help` -- so only those exact shapes count.
-  //     Anywhere else "help" is an ordinary argument and gets classified below.
-  if (argv.length >= 2 && argv.length <= 4 && argv[argv.length - 1] === 'help') {
-    return {
-      verdict: POLICY_VERDICTS.ALLOW_LOOKUP,
-      reason: null,
-      dryRunCapable: false,
-      argv,
-      binary,
-      verb: argv[1],
-    };
-  }
-
-  // 7. Structure check: `aws <service> <operation> [args...]`.
-  if (argv.length < 3) {
-    return reject('Command is missing a service or operation', argv, binary);
-  }
-
-  // 8. Classify the operation. Mutating patterns are checked first so that an
-  //    operation matching both lists is treated as the more dangerous one.
-  const operation = argv[2];
-
-  const isMutating =
-    MUTATING_EXACT_OPERATIONS.includes(operation) || startsWithAny(operation, MUTATING_PREFIXES);
-
-  if (isMutating) {
-    // 10. Mutating path.
-    const dryRunCapable = argv[1] === 'ec2' && DRY_RUN_SUPPORTED_EC2_OPERATIONS.includes(operation);
-    return {
-      verdict: POLICY_VERDICTS.REQUIRE_CONFIRMATION,
-      reason: null,
-      dryRunCapable,
-      argv,
-      binary,
-      verb: operation,
-    };
-  }
-
-  if (startsWithAny(operation, READONLY_PREFIXES)) {
-    // 9. Read-only path.
-    return {
-      verdict: POLICY_VERDICTS.ALLOW_READONLY,
-      reason: null,
-      dryRunCapable: false,
-      argv,
-      binary,
-      verb: operation,
-    };
-  }
-
-  // Default-deny. Anything we do not positively recognise as read-only or
-  // mutating is rejected -- never assumed safe. This is the single most
-  // important line in this file.
-  return reject(
-    `Unrecognized operation "${operation}" -- neither a known read-only nor mutating pattern`,
+  return {
+    verdict: VERDICT_FOR_KIND[operation.kind] ?? POLICY_VERDICTS.REJECTED,
+    reason: null,
+    dryRunCapable: operation.dryRunCapable,
     argv,
     binary,
-  );
+    verb: operation.verb,
+  };
 }
 
 module.exports = { classify };

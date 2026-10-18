@@ -6,7 +6,7 @@ import { TopNav } from '../../components/TopNav';
 import { ChatTranscript } from './components/ChatPanel';
 
 const MODE_LABELS = {
-  AIOPS: 'AIOps',
+  CLOUDOPS: 'CloudOps',
   FINOPS: 'FinOps',
 };
 

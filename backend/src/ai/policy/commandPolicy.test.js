@@ -10,6 +10,7 @@ function run(commandString, personaAllowedBinaries = AWS_ONLY) {
   return classify({
     mode: 'CSP',
     subMode: 'AWS',
+    csp: 'AWS',
     commandString,
     personaAllowedBinaries,
   });
@@ -202,6 +203,7 @@ test('rejects when the allowlist is missing entirely', () => {
   const result = classify({
     mode: 'CSP',
     subMode: 'AWS',
+    csp: 'AWS',
     commandString: 'aws ec2 describe-instances',
   });
   assert.equal(result.verdict, POLICY_VERDICTS.REJECTED);
@@ -347,6 +349,7 @@ test('rejects a non-string command string', () => {
     const result = classify({
       mode: 'CSP',
       subMode: 'AWS',
+      csp: 'AWS',
       commandString: value,
       personaAllowedBinaries: AWS_ONLY,
     });
@@ -361,12 +364,14 @@ test('mode and subMode do not change the verdict', () => {
   const a = classify({
     mode: 'CSP',
     subMode: 'AWS',
+    csp: 'AWS',
     commandString: 'aws ec2 describe-instances',
     personaAllowedBinaries: AWS_ONLY,
   });
   const b = classify({
     mode: 'ANYTHING_ELSE',
     subMode: null,
+    csp: 'AWS',
     commandString: 'aws ec2 describe-instances',
     personaAllowedBinaries: AWS_ONLY,
   });

@@ -99,3 +99,78 @@ test('updateWorkspace: passes isActive through, leaving other fields untouched',
     restoreAll();
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* setWorkspaceCredential -- validated against the Workspace's own CSP         */
+/* -------------------------------------------------------------------------- */
+
+const envelope = require('../../crypto/envelope');
+
+const originalUpsert = prisma.workspaceCredential.upsert;
+
+/** Runs setWorkspaceCredential for a Workspace on `csp`; returns what was stored. */
+async function storeCredential(csp, fields) {
+  let stored = null;
+  prisma.workspace.findUnique = async () => ({ id: WORKSPACE_ID, organisationId: ORG_ID, csp });
+  prisma.workspaceCredential.upsert = async ({ create }) => {
+    stored = JSON.parse(envelope.decrypt(create.encryptedCredentials));
+  };
+  try {
+    await service.setWorkspaceCredential(WORKSPACE_ID, fields);
+    return stored;
+  } finally {
+    prisma.workspaceCredential.upsert = originalUpsert;
+    restoreAll();
+  }
+}
+
+const AWS_FIELDS = { accessKeyId: 'AKIAEXAMPLE', secretAccessKey: 'shh' };
+const AZURE_FIELDS = {
+  tenantId: '11111111-1111-1111-1111-111111111111',
+  clientId: '22222222-2222-2222-2222-222222222222',
+  clientSecret: 'sp-secret',
+  subscriptionId: '33333333-3333-3333-3333-333333333333',
+};
+
+test('setWorkspaceCredential: stores each provider its own fields', async () => {
+  assert.deepEqual(await storeCredential('AWS', AWS_FIELDS), AWS_FIELDS);
+  assert.deepEqual(await storeCredential('AZURE', AZURE_FIELDS), AZURE_FIELDS);
+});
+
+test('setWorkspaceCredential: a GCP key file is reduced to what token minting needs', async () => {
+  const keyFile = {
+    type: 'service_account',
+    project_id: 'acme-prod-123',
+    private_key_id: 'abc',
+    private_key: '-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n',
+    client_email: 'opencai@acme-prod-123.iam.gserviceaccount.com',
+  };
+  const stored = await storeCredential('GCP', { serviceAccountKey: JSON.stringify(keyFile) });
+  assert.deepEqual(stored, {
+    clientEmail: keyFile.client_email,
+    privateKey: keyFile.private_key,
+    projectId: 'acme-prod-123',
+  });
+});
+
+test('setWorkspaceCredential: fields for another provider are a 400 and nothing is stored', async () => {
+  for (const [csp, fields] of [
+    ['AZURE', AWS_FIELDS],
+    ['AWS', AZURE_FIELDS],
+    ['GCP', AWS_FIELDS],
+    ['AWS', undefined],
+  ]) {
+    let stored = 'untouched';
+    await assert.rejects(
+      async () => {
+        stored = await storeCredential(csp, fields);
+      },
+      (err) => {
+        assert.equal(err.status, 400, csp);
+        assert.equal(err.code, ERROR_CODES.VALIDATION_ERROR);
+        return true;
+      },
+    );
+    assert.equal(stored, 'untouched');
+  }
+});

@@ -8,13 +8,14 @@ const MALFORMED_FALLBACK_TEXT = "(The model's response could not be parsed.)";
 const RUN_LOOKUP_TOOL = {
   name: 'run_lookup',
   description:
-    'Request a read-only lookup command to be run immediately (e.g. reading AWS CLI documentation with "aws <service> <operation> help", or a describe/list/get call). Use this when you need information before deciding what to do next, or to check exact command syntax.',
+    "Request a read-only lookup command to be run immediately (e.g. reading the cloud CLI's help for a command, or a describe/list/get/show call). Use this when you need information before deciding what to do next, or to check exact command syntax.",
   input_schema: {
     type: 'object',
     properties: {
       command: {
         type: 'string',
-        description: 'The exact shell command to run, e.g. "aws ec2 describe-instances help".',
+        description:
+          'The exact command to run with the Workspace\'s cloud CLI, e.g. "aws ec2 describe-instances help", "az vm list" or "gcloud compute instances list".',
       },
       regions: REGIONS_PROPERTY,
       explanation: {
@@ -36,7 +37,7 @@ const RUN_COMMAND_TOOL = {
       command: {
         type: 'string',
         description:
-          'The exact shell command to run, e.g. "aws ec2 terminate-instances --instance-ids i-0abc123".',
+          'The exact command to run with the Workspace\'s cloud CLI, e.g. "aws ec2 terminate-instances --instance-ids i-0abc123" or "az vm deallocate --name web --resource-group rg".',
       },
       regions: REGIONS_PROPERTY,
       explanation: {

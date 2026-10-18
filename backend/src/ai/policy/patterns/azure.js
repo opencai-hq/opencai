@@ -1,0 +1,115 @@
+// Azure CLI commands are `az <group> [subgroup...] <verb> [--options]`; the
+// verb is the last word before the first option.
+
+const READONLY_EXACT_VERBS = ['list', 'show', 'query', 'exists'];
+const READONLY_PREFIXES = ['list-', 'show-', 'get-'];
+
+// Curated, non-exhaustive. A verb in neither list is rejected, never assumed
+// safe, so a missing entry costs a refused command rather than an unconfirmed
+// change.
+const MUTATING_EXACT_VERBS = [
+  'create',
+  'delete',
+  'update',
+  'set',
+  'add',
+  'remove',
+  'start',
+  'stop',
+  'restart',
+  'deallocate',
+  'resize',
+  'redeploy',
+  'reimage',
+  'reset',
+  'purge',
+  'recover',
+  'restore',
+  'backup',
+  'assign',
+  'attach',
+  'detach',
+  'enable',
+  'disable',
+  'import',
+  'export',
+  'upload',
+  'scale',
+  'swap',
+  'move',
+  'rename',
+  'lock',
+  'unlock',
+  'apply',
+  'cancel',
+  'rotate',
+  'regenerate',
+  'renew',
+  'failover',
+  'grant',
+  'revoke',
+  'link',
+  'unlink',
+  'upgrade',
+  'deploy',
+  'tag',
+  'untag',
+  'capture',
+  'generalize',
+  'convert',
+  'clear',
+  'sync',
+  'approve',
+  'reject',
+];
+
+const MUTATING_PREFIXES = [
+  'create-',
+  'delete-',
+  'update-',
+  'set-',
+  'add-',
+  'remove-',
+  'start-',
+  'stop-',
+  'restart-',
+  'enable-',
+  'disable-',
+  'attach-',
+  'detach-',
+  'assign-',
+  'grant-',
+  'revoke-',
+  'regenerate-',
+  'reset-',
+  'purge-',
+  'rotate-',
+  'upgrade-',
+];
+
+// Command paths refused outright, whatever their verb: they change or reveal
+// the sandbox's own sign-in rather than acting on cloud resources.
+const BLOCKED_PATHS = [
+  ['login'],
+  ['logout'],
+  ['account', 'set'],
+  ['account', 'clear'],
+  ['account', 'get-access-token'],
+  ['config'],
+  ['configure'],
+  ['extension'],
+  ['rest'],
+  ['upgrade'],
+  ['interactive'],
+  ['ssh'],
+  ['acr', 'login'],
+  ['aks', 'get-credentials'],
+];
+
+module.exports = {
+  READONLY_EXACT_VERBS,
+  READONLY_PREFIXES,
+  MUTATING_EXACT_VERBS,
+  MUTATING_PREFIXES,
+  BLOCKED_PATHS,
+};

@@ -1,14 +1,14 @@
 import { WorkspaceSummaryCard } from './WorkspaceSummaryCard';
 import { ChatPanel } from './ChatPanel';
 
-const AIOPS_PROMPTS = [
+const CLOUDOPS_PROMPTS = [
   'Create an EC2 instance',
   'Start an EC2 instance',
   'Create EBS volume',
   'Create a new S3 bucket',
 ];
 
-export function AiOpsScreen({ workspace, onEditWorkspace, messages, onSend, onConfirm, onCancel, sending }) {
+export function CloudOpsScreen({ workspace, onEditWorkspace, messages, onSend, onConfirm, onCancel, sending }) {
   // The intro and workspace card only matter before the conversation starts;
   // the workspace stays visible in the sidebar.
   const started = messages.length > 0;
@@ -18,7 +18,7 @@ export function AiOpsScreen({ workspace, onEditWorkspace, messages, onSend, onCo
       {!started && (
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-50">
-            Hi, I'm AIOps Agent ⚡
+            Hi, I'm CloudOps Agent ⚡
           </h1>
           <p className="mt-2 text-gray-500 dark:text-gray-400">
             I can help you with cloud operations including creating, updating, and deleting
@@ -32,7 +32,7 @@ export function AiOpsScreen({ workspace, onEditWorkspace, messages, onSend, onCo
         <ChatPanel
           messages={messages}
           onSend={onSend}
-          suggestedPrompts={AIOPS_PROMPTS}
+          suggestedPrompts={CLOUDOPS_PROMPTS}
           onConfirm={onConfirm}
           onCancel={onCancel}
           sending={sending}

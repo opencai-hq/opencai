@@ -5,7 +5,9 @@ import { useEffect, useId, useRef } from 'react';
  * (or button) gets focus, and the page behind it doesn't scroll. Toasts sit
  * above it (z-50), so a failed save still shows its error.
  */
-export function Dialog({ title, onClose, children }) {
+const SIZE_CLASS = { md: 'max-w-md', xl: 'max-w-4xl' };
+
+export function Dialog({ title, onClose, size = 'md', children }) {
   const titleId = useId();
   const panelRef = useRef(null);
   // Read through a ref so a parent re-render (new onClose) doesn't re-run the
@@ -41,7 +43,7 @@ export function Dialog({ title, onClose, children }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="max-h-full w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800"
+        className={`max-h-full w-full ${SIZE_CLASS[size]} overflow-y-auto rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800`}
       >
         <h2 id={titleId} className="text-lg font-semibold text-gray-900 dark:text-gray-100">
           {title}

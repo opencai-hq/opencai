@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
 import { useToast } from '../../lib/ToastContext';
@@ -14,10 +14,16 @@ import {
 } from '../../lib/chatApi';
 import { TopNav } from '../../components/TopNav';
 import { OperatorSidebar } from './components/OperatorSidebar';
+import { ViewToggle } from './components/ViewToggle';
 import { WorkspaceSelectorForm } from './components/WorkspaceSelectorForm';
 import { ChatSessionHeader } from './components/ChatSessionHeader';
-import { AiOpsScreen } from './components/AiOpsScreen';
+import { CloudOpsScreen } from './components/CloudOpsScreen';
 import { FinOpsScreen } from './components/FinOpsScreen';
+
+// The dashboard brings the charting library with it; load it only when opened.
+const DashboardScreen = lazy(() =>
+  import('./components/dashboard/DashboardScreen').then((m) => ({ default: m.DashboardScreen })),
+);
 
 // One open chat per workspace + mode (+ FinOps sub-mode).
 function keyFor(workspaceId, mode, subMode) {
@@ -38,9 +44,18 @@ export function OperatorPage() {
   const { token } = useAuth();
   const toast = useToast();
   const { workspace, setWorkspace } = useWorkspace();
+  // The URL mirrors the open chat: `/operator?session=<id>`. Links (Recent
+  // History, Chat History, a pasted URL, back/forward) open a chat through the
+  // URL; opening, starting or leaving a chat in the page writes it back.
+  // `view=dashboard` (with `mode`) shows the mode's dashboard instead of its chat.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openSessionId = searchParams.get('session');
+  const view = searchParams.get('view') === 'dashboard' ? 'dashboard' : 'chat';
   const [cloudOrOnPrem, setCloudOrOnPrem] = useState('cloud');
   const [editingWorkspace, setEditingWorkspace] = useState(false);
-  const [activeMode, setActiveMode] = useState('AIOPS');
+  const [activeMode, setActiveMode] = useState(() =>
+    searchParams.get('mode') === 'FINOPS' ? 'FINOPS' : 'CLOUDOPS',
+  );
   const [financeSubMode, setFinanceSubMode] = useState(null);
   const [sessionsByKey, setSessionsByKey] = useState({});
   const [messagesBySession, setMessagesBySession] = useState({});
@@ -72,14 +87,19 @@ export function OperatorPage() {
   const sessionKey = workspace ? keyFor(workspace.id, activeMode, financeSubMode) : null;
   const currentSession = sessionKey ? sessionsByKey[sessionKey] : null;
 
-  // The URL mirrors the open chat: `/operator?session=<id>`. Links (Recent
-  // History, Chat History, a pasted URL, back/forward) open a chat through the
-  // URL; opening, starting or leaving a chat in the page writes it back.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const openSessionId = searchParams.get('session');
   // The session id being loaded from the URL. While set, the state -> URL sync
   // below must not overwrite the URL with the (not yet loaded) current chat.
   const loadingSessionIdRef = useRef(null);
+
+  // Changes only the open chat in the URL; the view stays as it is.
+  function writeSessionParam(id, options) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set('session', id);
+      else next.delete('session');
+      return next;
+    }, options);
+  }
 
   // URL -> state.
   useEffect(() => {
@@ -112,7 +132,7 @@ export function OperatorPage() {
         if (cancelled) return;
         toast.error(err.message || 'Could not open that chat.');
         // Point the URL back at whatever chat is still open.
-        setSearchParams(currentSession ? { session: currentSession.id } : {}, { replace: true });
+        writeSessionParam(currentSession?.id ?? null, { replace: true });
       })
       .finally(() => {
         if (!cancelled && loadingSessionIdRef.current === openSessionId) {
@@ -132,9 +152,36 @@ export function OperatorPage() {
     if (loadingSessionIdRef.current) return;
     const id = currentSession?.id ?? null;
     // A history entry, so browser back returns to the previous chat.
-    if (id !== openSessionId) setSearchParams(id ? { session: id } : {});
+    if (id !== openSessionId) writeSessionParam(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSession?.id]);
+
+  // A reloaded dashboard has no chat to take its mode from, so the URL carries it.
+  useEffect(() => {
+    const wanted = view === 'dashboard' ? activeMode : null;
+    if (searchParams.get('mode') === wanted) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (wanted) next.set('mode', wanted);
+        else next.delete('mode');
+        return next;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, activeMode]);
+
+  // A history entry, so browser back returns to the view the Operator left.
+  function handleChangeView(nextView) {
+    if (nextView === view) return;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (nextView === 'dashboard') next.set('view', 'dashboard');
+      else next.delete('view');
+      return next;
+    });
+  }
 
   // Sessions are created lazily by the first message (see handleSend), so
   // starting a new one just clears the current chat for this mode.
@@ -283,51 +330,68 @@ export function OperatorPage() {
           activeSessionId={currentSession?.id}
           onRenameSession={handleRenameSession}
         />
-        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pt-10">
-          {cloudOrOnPrem === 'onprem' ? (
-            <div className="flex flex-1 items-center justify-center pb-10 text-gray-400">
-              On-Prem support is coming soon.
+        {/* The toggle sits level with the main area's first line (the agent greeting,
+            the session header or the dashboard title), clear of the scrollbar. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {cloudOrOnPrem === 'cloud' && workspace && !editingWorkspace && (
+            <div className="absolute right-6 top-9 z-10">
+              <ViewToggle view={view} onChange={handleChangeView} />
             </div>
-          ) : !workspace || editingWorkspace ? (
-            <div className="mx-auto w-full max-w-4xl pb-10">
-              <WorkspaceSelectorForm
-                onComplete={(ws) => {
-                  setWorkspace(ws);
-                  setEditingWorkspace(false);
-                }}
-              />
-            </div>
-          ) : (
-            <>
-              {currentSession && (
-                <div className="mx-auto mb-6 w-full max-w-4xl">
-                  <ChatSessionHeader session={currentSession} onNewSession={handleNewSession} />
-                </div>
-              )}
-              {activeMode === 'AIOPS' ? (
-                <AiOpsScreen
-                  workspace={workspace}
-                  onEditWorkspace={() => setEditingWorkspace(true)}
-                  messages={messages}
-                  onSend={handleSend}
-                  onConfirm={handleConfirm}
-                  onCancel={handleCancel}
-                  sending={sending}
-                />
-              ) : (
-                <FinOpsScreen
-                  subMode={financeSubMode}
-                  onSelectSubMode={setFinanceSubMode}
-                  messages={messages}
-                  onSend={handleSend}
-                  onConfirm={handleConfirm}
-                  onCancel={handleCancel}
-                  sending={sending}
-                />
-              )}
-            </>
           )}
-        </main>
+          <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pt-10">
+            {cloudOrOnPrem === 'onprem' ? (
+              <div className="flex flex-1 items-center justify-center pb-10 text-gray-400">
+                On-Prem support is coming soon.
+              </div>
+            ) : !workspace || editingWorkspace ? (
+              <div className="mx-auto w-full max-w-4xl pb-10">
+                <WorkspaceSelectorForm
+                  onComplete={(ws) => {
+                    setWorkspace(ws);
+                    setEditingWorkspace(false);
+                  }}
+                />
+              </div>
+            ) : view === 'dashboard' ? (
+              <Suspense fallback={<p className="text-sm text-gray-400">Loading dashboard…</p>}>
+                <DashboardScreen
+                  key={`${workspace.id}:${activeMode}`}
+                  workspace={workspace}
+                  mode={activeMode}
+                />
+              </Suspense>
+            ) : (
+              <>
+                {currentSession && (
+                  <div className="mx-auto mb-6 w-full max-w-4xl pr-28">
+                    <ChatSessionHeader session={currentSession} onNewSession={handleNewSession} />
+                  </div>
+                )}
+                {activeMode === 'CLOUDOPS' ? (
+                  <CloudOpsScreen
+                    workspace={workspace}
+                    onEditWorkspace={() => setEditingWorkspace(true)}
+                    messages={messages}
+                    onSend={handleSend}
+                    onConfirm={handleConfirm}
+                    onCancel={handleCancel}
+                    sending={sending}
+                  />
+                ) : (
+                  <FinOpsScreen
+                    subMode={financeSubMode}
+                    onSelectSubMode={setFinanceSubMode}
+                    messages={messages}
+                    onSend={handleSend}
+                    onConfirm={handleConfirm}
+                    onCancel={handleCancel}
+                    sending={sending}
+                  />
+                )}
+              </>
+            )}
+          </main>
+        </div>
       </div>
     </div>
   );

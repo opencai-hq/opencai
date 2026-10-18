@@ -1,7 +1,8 @@
 // Best-effort secret scrubbing for command output before it is stored or shown.
 //
 // This is NOT a guarantee. It redacts a handful of well-known, high-signal
-// secret shapes (AWS access key IDs, PEM private key blocks, JSON and
+// secret shapes (AWS access key IDs, Google access tokens, JWTs, Azure storage
+// connection strings and SAS signatures, PEM private key blocks, JSON and
 // ini/env-style secret fields). Secrets in shapes it does not know about will
 // pass through unchanged. Treat it as defence in depth, never as a reason to
 // let untrusted output reach somewhere it should not.
@@ -38,6 +39,20 @@ function sanitizeOutput(text) {
   // 1. AWS access key IDs (long-lived AKIA..., temporary ASIA...).
   result = result.replace(/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, REDACTED);
 
+  // 1b. Google OAuth access tokens, and JWTs (Azure AD and Google ID tokens).
+  result = result.replace(/\bya29\.[A-Za-z0-9_-]+/g, REDACTED);
+  result = result.replace(
+    /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+/g,
+    REDACTED,
+  );
+
+  // 1c. Azure storage connection strings and SAS URL signatures.
+  result = result.replace(
+    /\b(AccountKey|SharedAccessKey|SharedAccessSignature)=[^;"'\s]+/gi,
+    `$1=${REDACTED}`,
+  );
+  result = result.replace(/([?&]sig=)[^&"'\s]+/g, `$1${REDACTED}`);
+
   // 2. PEM private key blocks. Run before the narrower rules below so a key's
   //    base64 body can never be partially matched by them.
   result = result.replace(
@@ -46,20 +61,28 @@ function sanitizeOutput(text) {
   );
 
   // 3. JSON-shaped secret fields, e.g. "SecretAccessKey", "SessionToken",
-  //    "Password", "secretString".
+  //    "Password", "secretString", "client_secret", "private_key",
+  //    "connectionString", "primaryKey".
   result = result.replace(
-    /"([a-zA-Z]*(?:Secret|Password|Token|PrivateKey)[a-zA-Z]*)"\s*:\s*"([^"]*)"/gi,
+    /"([a-zA-Z_]*(?:secret|password|token|private_?key|connection_?string|(?:primary|secondary|account)_?key)[a-zA-Z_]*)"\s*:\s*"(?:[^"\\]|\\.)*"/gi,
     `"$1": "${REDACTED}"`,
   );
 
   // 4. ini/env-shaped secret fields, e.g. AWS credentials files and KEY=value
   //    environment dumps.
   result = result.replace(
-    /^(\s*(?:aws_secret_access_key|aws_session_token|password|secret|private_key)\s*=\s*).+$/gim,
+    /^(\s*(?:aws_secret_access_key|aws_session_token|client_secret|password|secret|private_key)\s*=\s*).+$/gim,
     `$1${REDACTED}`,
   );
 
   return result;
 }
 
-module.exports = { sanitizeOutput };
+/** Sanitize both streams independently and join them into one output blob. */
+function combineOutput(execution) {
+  const out = sanitizeOutput(execution?.stdout ?? '');
+  const err = execution?.stderr ? sanitizeOutput(execution.stderr) : '';
+  return err ? `${out}\n${err}` : out;
+}
+
+module.exports = { sanitizeOutput, combineOutput };

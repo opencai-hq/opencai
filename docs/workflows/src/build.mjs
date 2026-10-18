@@ -544,6 +544,88 @@ function anchors(x, y, w, h) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Fig. 5.1 — How a command runs in the sandbox                                */
+/* -------------------------------------------------------------------------- */
+{
+  const d = new Diagram({
+    file: '05-1-command-execution',
+    width: 1180,
+    height: 1486,
+    fig: '5.1',
+    title: 'How a command runs in the sandbox',
+    subtitle: 'Each chat gets its own locked-down container. Commands go in as argument lists, with credentials supplied per run.',
+    source: 'backend/src/ai/sandbox/sandboxManager.js, backend/src/ai/orchestrator.js, backend/sandbox/Dockerfile',
+  });
+
+  const X = 360;
+  const W = 380;
+  const CX = X + W / 2;
+
+  d.frame(30, 130, 740, 536, 'ONCE PER MESSAGE · PROVISION THE SANDBOX');
+  const t0 = d.box(X, 165, W, 44, ['The Operator sends a message'], { kind: 'terminal' });
+  const q = d.diamond(CX, 285, 260, 86, ['This chat has a', 'running container?']);
+  d.arrow([t0.b, q.t]);
+  const reuse = d.box(60, 254, 210, 62, ['Reuse it', 'idle expiry pushed forward'], { kind: 'outcome' });
+  d.arrow([q.l, reuse.r], { label: 'yes', labelAt: [345, q.cy - 8] });
+  const create = d.box(X, 370, W, 62, ['Create and start a container', { t: 'opencai-sandbox:2.15.30 · sleep infinity', style: 'mono' }]);
+  d.arrow([q.b, create.t], { label: 'no', labelAt: [CX + 10, 356], anchor: 'start' });
+  const fail = d.box(60, 370, 210, 62, ['Creation fails', 'removed again · stops — Fig. 2'], { kind: 'stop' });
+  d.arrow([create.l, fail.r], { accent: true, label: 'fails', labelAt: [315, create.cy - 8] });
+  const record = d.box(X, 468, W, 62, ['Record it on the chat session', 'container id · status ready · idle expiry']);
+  d.arrow([create.b, record.t]);
+  const cred = d.box(X, 566, W, 78, ['Credential becomes environment variables', 'decrypted from the vault, held in memory only', { t: 'AWS_ACCESS_KEY_ID · AWS_SECRET_ACCESS_KEY', style: 'mono' }]);
+  d.arrow([record.b, cred.t]);
+  d.arrow([reuse.l, [45, reuse.cy], [45, cred.cy], cred.l]);
+
+  d.frame(30, 690, 740, 706, 'ONCE PER COMMAND · EXECUTE');
+  const e0 = d.box(X, 726, W, 44, ['A command is cleared to run'], { kind: 'terminal' });
+  d.arrow([cred.b, e0.t]);
+  d.note(60, 742, ['read-only: at once — Fig. 4', 'mutating: once confirmed — Fig. 5']);
+  const e1 = d.box(X, 806, W, 94, ['docker exec with an argument list', { t: 'timeout --signal=KILL 60 aws ec2 describe-instances', style: 'mono' }, 'no shell · credentials set on this exec only', 'time limit from Chat Settings — 60 s by default']);
+  d.note(60, 842, ['With regions requested, one', 'exec per region, in parallel.']);
+  const e2 = d.box(X, 936, W, 62, ['Collect stdout and stderr', 'each capped at 1 MB · waits at most the timeout + 10 s']);
+  const e3 = d.box(X, 1034, W, 62, ['Read the exit code', 'exit 124, or none at all, counts as timed out']);
+  const e4 = d.box(X, 1132, W, 62, ['Sanitise the output', 'escape codes stripped · keys and secret fields redacted']);
+  const e5 = d.box(X, 1230, W, 62, ['Save and audit', 'chat history · audit: executed, with the exit code']);
+  const t1 = d.box(X, 1328, W, 44, ['Output goes back to the model'], { kind: 'terminal' });
+  [
+    [e0, e1],
+    [e1, e2],
+    [e2, e3],
+    [e3, e4],
+    [e4, e5],
+    [e5, t1],
+  ].forEach(([a, b]) => d.arrow([a.b, b.t]));
+
+  const aws = d.box(891, 150, 150, 62, ['AWS', 'your account']);
+  d.frame(800, 290, 332, 870, 'DOCKER ENGINE');
+  const box = d.box(816, 340, 300, 200, [
+    { t: 'Sandbox container', style: 'head' },
+    { t: 'one per chat session' },
+    { t: '' },
+    { t: 'non-root user 10001' },
+    { t: 'all capabilities dropped' },
+    { t: 'no-new-privileges' },
+    { t: 'read-only root filesystem' },
+    { t: 'tmpfs /tmp, /home/sandbox · 64 MB each' },
+    { t: '512 MB memory · 1 vCPU · 64 processes' },
+    { t: 'AWS CLI image · bridge network' },
+  ]);
+  d.arrow([box.t, aws.b], { label: 'AWS CLI calls', labelAt: [box.cx + 10, 258], anchor: 'start' });
+  d.arrow([create.r, [box.x, create.cy]], { label: 'create · start', labelAt: [785, create.cy - 8] });
+  d.arrow([e1.r, [930, e1.cy], [930, box.y + box.h]], { label: 'exec', labelAt: [785, e1.cy - 8] });
+  d.arrow([[1000, box.y + box.h], [1000, e2.cy], e2.r], {
+    dashed: true,
+    label: 'stdout · stderr',
+    labelAt: [870, e2.cy - 8],
+  });
+  const gone = d.box(816, 1040, 300, 96, ['Container stopped and removed', 'idle past its expiry — 30 minutes by default,', 'swept every minute', 'or an admin deletes the chat'], { kind: 'outcome' });
+  d.arrow([[1070, box.y + box.h], [1070, gone.y]], { dashed: true, label: 'later', labelAt: [1080, 800], anchor: 'start' });
+  d.note(800, 1192, ['Credentials are never written into the', 'container: they exist only for the lifetime', 'of each exec.']);
+  d.save();
+}
+
+/* -------------------------------------------------------------------------- */
 /* Fig. 6 — Local setup                                                        */
 /* -------------------------------------------------------------------------- */
 {

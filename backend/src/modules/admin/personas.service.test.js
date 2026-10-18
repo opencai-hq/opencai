@@ -12,6 +12,7 @@ process.env.S3_BUCKET ||= 'test';
 
 const prisma = require('../../config/db');
 const service = require('./personas.service');
+const { DEFAULT_PERSONAS } = require('../../ai/prompts/defaults');
 
 /* -------------------------------------------------------------------------- */
 /* Mock helpers -- direct require() + reassignment, restored in `finally`,    */
@@ -34,21 +35,21 @@ const USER_ID = 'admin-1';
 /* upsertPersona                                                              */
 /* -------------------------------------------------------------------------- */
 
-test('upsertPersona: computes modeKey as the bare mode for AIOPS (no subMode)', async () => {
+test('upsertPersona: computes modeKey as the bare mode for CLOUDOPS (no subMode)', async () => {
   let capturedArgs;
   prisma.agentPersona.upsert = async (args) => {
     capturedArgs = args;
-    return { modeKey: 'AIOPS', ...args.update };
+    return { modeKey: 'CLOUDOPS', ...args.update };
   };
 
   try {
     await service.upsertPersona(USER_ID, {
-      mode: 'AIOPS',
-      systemPrompt: 'you are an aiops agent',
+      mode: 'CLOUDOPS',
+      systemPrompt: 'you are an cloudops agent',
       allowedBinaries: ['aws'],
     });
 
-    assert.deepEqual(capturedArgs.where, { modeKey: 'AIOPS' });
+    assert.deepEqual(capturedArgs.where, { modeKey: 'CLOUDOPS' });
   } finally {
     restoreAll();
   }
@@ -79,12 +80,12 @@ test('upsertPersona: uses Prisma upsert with where/update/create shaped for the 
   let capturedArgs;
   prisma.agentPersona.upsert = async (args) => {
     capturedArgs = args;
-    return { modeKey: 'AIOPS', ...args.update };
+    return { modeKey: 'CLOUDOPS', ...args.update };
   };
 
   try {
     await service.upsertPersona(USER_ID, {
-      mode: 'AIOPS',
+      mode: 'CLOUDOPS',
       systemPrompt: 'prompt text',
       allowedBinaries: ['aws'],
       mutatingCommandCap: 5,
@@ -92,7 +93,7 @@ test('upsertPersona: uses Prisma upsert with where/update/create shaped for the 
     });
 
     assert.deepEqual(Object.keys(capturedArgs).sort(), ['create', 'update', 'where']);
-    assert.equal(capturedArgs.create.modeKey, 'AIOPS');
+    assert.equal(capturedArgs.create.modeKey, 'CLOUDOPS');
     assert.equal(capturedArgs.update.updatedByUserId, USER_ID);
     assert.equal(capturedArgs.create.updatedByUserId, USER_ID);
   } finally {
@@ -104,12 +105,12 @@ test('upsertPersona: omitting mutatingCommandCap/docLookupAllowed resets them to
   let capturedArgs;
   prisma.agentPersona.upsert = async (args) => {
     capturedArgs = args;
-    return { modeKey: 'AIOPS', ...args.update };
+    return { modeKey: 'CLOUDOPS', ...args.update };
   };
 
   try {
     await service.upsertPersona(USER_ID, {
-      mode: 'AIOPS',
+      mode: 'CLOUDOPS',
       systemPrompt: 'prompt text',
       allowedBinaries: ['aws'],
       // mutatingCommandCap and docLookupAllowed intentionally omitted
@@ -126,12 +127,12 @@ test('upsertPersona: omitting mutatingCommandCap/docLookupAllowed resets them to
   let capturedArgs;
   prisma.agentPersona.upsert = async (args) => {
     capturedArgs = args;
-    return { modeKey: 'AIOPS', ...args.create };
+    return { modeKey: 'CLOUDOPS', ...args.create };
   };
 
   try {
     await service.upsertPersona(USER_ID, {
-      mode: 'AIOPS',
+      mode: 'CLOUDOPS',
       systemPrompt: 'prompt text',
       allowedBinaries: ['aws'],
     });
@@ -173,23 +174,67 @@ test('upsertPersona: providing mutatingCommandCap/docLookupAllowed passes them t
 /* listPersonas                                                              */
 /* -------------------------------------------------------------------------- */
 
-test('listPersonas: returns whatever findMany returns, ordered by modeKey ascending', async () => {
-  const rows = [
-    { modeKey: 'AIOPS', systemPrompt: 'a' },
-    { modeKey: 'FINOPS_COST_ANALYTICS', systemPrompt: 'b' },
+test('listPersonas: a stored row overrides the default prompt and keeps its own settings', async () => {
+  prisma.agentPersona.findMany = async () => [
+    {
+      mode: 'CLOUDOPS',
+      subMode: null,
+      modeKey: 'CLOUDOPS',
+      systemPrompt: 'edited prompt',
+      allowedBinaries: ['aws'],
+      mutatingCommandCap: 7,
+      docLookupAllowed: false,
+    },
   ];
 
-  let capturedArgs;
-  prisma.agentPersona.findMany = async (args) => {
-    capturedArgs = args;
-    return rows;
-  };
+  try {
+    const result = await service.listPersonas();
+    const cloudOps = result.find((p) => p.modeKey === 'CLOUDOPS');
+    const fallback = DEFAULT_PERSONAS.find((p) => p.modeKey === 'CLOUDOPS');
+
+    assert.equal(cloudOps.systemPrompt, 'edited prompt');
+    assert.deepEqual(cloudOps.allowedBinaries, ['aws']);
+    assert.equal(cloudOps.mutatingCommandCap, 7);
+    assert.equal(cloudOps.docLookupAllowed, false);
+    assert.equal(cloudOps.defaultSystemPrompt, fallback.systemPrompt);
+  } finally {
+    restoreAll();
+  }
+});
+
+test('listPersonas: a mode with no stored row is returned with its default', async () => {
+  prisma.agentPersona.findMany = async () => [];
+
+  try {
+    const result = await service.listPersonas();
+    const fallback = DEFAULT_PERSONAS.find((p) => p.modeKey === 'FINOPS_COST_ANALYTICS');
+    const persona = result.find((p) => p.modeKey === 'FINOPS_COST_ANALYTICS');
+
+    assert.equal(persona.mode, 'FINOPS');
+    assert.equal(persona.subMode, 'COST_ANALYTICS');
+    assert.equal(persona.systemPrompt, fallback.systemPrompt);
+    assert.equal(persona.defaultSystemPrompt, fallback.systemPrompt);
+    assert.deepEqual(persona.allowedBinaries, fallback.allowedBinaries);
+    assert.equal(persona.mutatingCommandCap, null);
+    assert.equal(persona.docLookupAllowed, true);
+  } finally {
+    restoreAll();
+  }
+});
+
+test('listPersonas: returns every default persona, in the defaults order', async () => {
+  prisma.agentPersona.findMany = async () => [
+    { mode: 'FINOPS', subMode: 'WASTE_MANAGEMENT', modeKey: 'FINOPS_WASTE_MANAGEMENT', systemPrompt: 'x' },
+  ];
 
   try {
     const result = await service.listPersonas();
 
-    assert.deepEqual(result, rows);
-    assert.deepEqual(capturedArgs, { orderBy: { modeKey: 'asc' } });
+    assert.deepEqual(
+      result.map((p) => p.modeKey),
+      DEFAULT_PERSONAS.map((p) => p.modeKey),
+    );
+    assert.ok(result.every((p) => typeof p.defaultSystemPrompt === 'string'));
   } finally {
     restoreAll();
   }

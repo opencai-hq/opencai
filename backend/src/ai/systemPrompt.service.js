@@ -31,4 +31,17 @@ async function getPersona(mode, subMode) {
   };
 }
 
-module.exports = { getPersona };
+/**
+ * Every CLI binary any persona of this mode may run. A dashboard belongs to a
+ * mode, not to one of its sub-modes, so it has no single persona to ask.
+ */
+async function allowedBinariesForMode(mode) {
+  const rows = await prisma.agentPersona.findMany({
+    where: { mode },
+    select: { allowedBinaries: true },
+  });
+  const personas = rows.length > 0 ? rows : DEFAULT_PERSONAS.filter((p) => p.mode === mode);
+  return [...new Set(personas.flatMap((p) => p.allowedBinaries))];
+}
+
+module.exports = { getPersona, allowedBinariesForMode };

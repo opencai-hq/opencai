@@ -7,7 +7,7 @@ import { ChatTranscript } from '../operator/components/ChatPanel';
 import { AdminLayout } from './AdminLayout';
 
 const MODE_LABELS = {
-  AIOPS: 'AIOps',
+  CLOUDOPS: 'CloudOps',
   FINOPS: 'FinOps',
 };
 

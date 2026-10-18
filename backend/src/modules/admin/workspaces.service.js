@@ -2,6 +2,7 @@ const prisma = require('../../config/db');
 const envelope = require('../../crypto/envelope');
 const { AppError } = require('../../middleware/errorHandler');
 const { ERROR_CODES } = require('../../constants/errors');
+const { getCsp } = require('../../ai/csp');
 
 const WORKSPACE_SELECT = {
   id: true,
@@ -35,14 +36,24 @@ async function updateWorkspace(workspaceId, { account, environment, isActive }) 
   });
 }
 
-// credentialFields shape is CSP-specific (e.g. { accessKeyId, secretAccessKey }
-// for AWS) -- stored as a single envelope-encrypted JSON blob so adding a
-// second CSP never requires a schema change here.
+// The credential fields differ per CSP, so they are validated here, against the
+// Workspace's own provider, rather than by a route-level schema. What is stored
+// is the schema's parsed output -- a single envelope-encrypted JSON blob, so a
+// new CSP never requires a database change.
 async function setWorkspaceCredential(workspaceId, credentialFields) {
   const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
   if (!workspace) throw new AppError(404, ERROR_CODES.NOT_FOUND);
 
-  const encryptedCredentials = envelope.encrypt(JSON.stringify(credentialFields));
+  const parsed = getCsp(workspace.csp).credentialSchema.safeParse(credentialFields);
+  if (!parsed.success) {
+    throw new AppError(
+      400,
+      ERROR_CODES.VALIDATION_ERROR,
+      parsed.error.issues.map((i) => i.message).join('; '),
+    );
+  }
+
+  const encryptedCredentials = envelope.encrypt(JSON.stringify(parsed.data));
 
   await prisma.workspaceCredential.upsert({
     where: { workspaceId },

@@ -5,5 +5,8 @@ build/
 *.log
 .DS_Store
 
+# Written by setup.sh to switch bundled containers off
+docker-compose.override.yml
+
 # Local git worktrees for isolated feature work
 .worktrees/

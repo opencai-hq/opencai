@@ -39,6 +39,16 @@ const ERROR_CODES = Object.freeze({
   // Thrown with HTTP 403 when an Operator starts or continues a chat in a
   // Workspace an Administrator has deactivated.
   WORKSPACE_INACTIVE: 'WORKSPACE_INACTIVE',
+  // Thrown with HTTP 409 when a dashboard already holds the most graphs allowed.
+  DASHBOARD_WIDGET_LIMIT: 'DASHBOARD_WIDGET_LIMIT',
+  // Thrown with HTTP 422 when a graph cannot be saved because its command or
+  // chart definition does not run cleanly.
+  DASHBOARD_WIDGET_INVALID: 'DASHBOARD_WIDGET_INVALID',
+  // Thrown with HTTP 422 when the model could not turn a request into a
+  // working graph within its budget.
+  DASHBOARD_AUTHOR_FAILED: 'DASHBOARD_AUTHOR_FAILED',
+  // Thrown with HTTP 429 when an Operator already has too many graph runs queued.
+  DASHBOARD_BUSY: 'DASHBOARD_BUSY',
 });
 
 const ERROR_MESSAGES = Object.freeze({
@@ -70,6 +80,13 @@ const ERROR_MESSAGES = Object.freeze({
   [ERROR_CODES.OPERATOR_HAS_CHATS]:
     'This operator has chat sessions and cannot be deleted. Deactivate them instead.',
   [ERROR_CODES.WORKSPACE_INACTIVE]: 'This Workspace has been deactivated by an administrator.',
+  [ERROR_CODES.DASHBOARD_WIDGET_LIMIT]:
+    'This dashboard already has the most graphs allowed. Remove one to add another.',
+  [ERROR_CODES.DASHBOARD_WIDGET_INVALID]: 'This graph could not be saved.',
+  [ERROR_CODES.DASHBOARD_AUTHOR_FAILED]:
+    'A graph could not be built for that request. Try describing it differently.',
+  [ERROR_CODES.DASHBOARD_BUSY]:
+    'Too many graphs are refreshing at once. Wait a moment and try again.',
 });
 
 module.exports = { ERROR_CODES, ERROR_MESSAGES };

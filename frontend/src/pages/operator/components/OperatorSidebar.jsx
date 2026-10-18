@@ -4,7 +4,7 @@ import { WorkspaceSummaryCard } from './WorkspaceSummaryCard';
 import { BoltIcon, ChartIcon, EditIcon } from '../../../components/icons';
 
 const MODES = [
-  { key: 'AIOPS', label: 'AIOps', Icon: BoltIcon },
+  { key: 'CLOUDOPS', label: 'CloudOps', Icon: BoltIcon },
   { key: 'FINOPS', label: 'FinOps', Icon: ChartIcon },
 ];
 

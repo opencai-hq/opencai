@@ -13,10 +13,9 @@ import { useToast } from '../../lib/ToastContext';
 import { ConfirmDialog, Field, FormDialog } from '../../components/Dialog';
 import { OrganisationDialog } from './ManageOrganisations';
 import { AdminLayout } from './AdminLayout';
+import { CSPS, CSP_OPTIONS, cspLabel } from '../../lib/csp';
 
-const CSP_OPTIONS = ['AWS'];
-
-const workspaceLabel = (ws) => `${ws.csp} · ${ws.account} · ${ws.environment}`;
+const workspaceLabel = (ws) => `${cspLabel(ws.csp)} · ${ws.account} · ${ws.environment}`;
 
 /** Adding a Workspace (with its cloud provider) or editing its account/environment. */
 function WorkspaceDialog({ workspace, busy, onSubmit, onClose }) {
@@ -45,7 +44,7 @@ function WorkspaceDialog({ workspace, busy, onSubmit, onClose }) {
           >
             {CSP_OPTIONS.map((option) => (
               <option key={option} value={option}>
-                {option}
+                {cspLabel(option)}
               </option>
             ))}
           </select>
@@ -67,36 +66,58 @@ function WorkspaceDialog({ workspace, busy, onSubmit, onClose }) {
   );
 }
 
+/** The credential fields are the Workspace's cloud provider's own (see lib/csp.js). */
 function CredentialDialog({ workspace, busy, onSubmit, onClose }) {
-  const [accessKeyId, setAccessKeyId] = useState('');
-  const [secretAccessKey, setSecretAccessKey] = useState('');
+  const fields = CSPS[workspace.csp]?.credentialFields ?? [];
+  const [values, setValues] = useState({});
+  const set = (name) => (e) => setValues((current) => ({ ...current, [name]: e.target.value }));
+  // Optional fields left blank are omitted, so the backend applies its default.
+  const body = () =>
+    Object.fromEntries(
+      fields
+        .map((field) => [field.name, (values[field.name] ?? '').trim()])
+        .filter(([, value]) => value !== ''),
+    );
   return (
     <FormDialog
       title={workspace.credential ? 'Replace credentials' : 'Attach credentials'}
       submitLabel="Save credentials"
       submitting={busy}
-      onSubmit={() => onSubmit({ accessKeyId, secretAccessKey })}
+      onSubmit={() => onSubmit(body())}
       onClose={onClose}
     >
       <p className="text-sm text-gray-600 dark:text-gray-300">
         {workspaceLabel(workspace)}
         {workspace.credential && ' — the saved credentials will be overwritten.'}
       </p>
-      <Field
-        label="AWS Access Key ID"
-        required
-        autoComplete="off"
-        value={accessKeyId}
-        onChange={(e) => setAccessKeyId(e.target.value)}
-      />
-      <Field
-        label="AWS Secret Access Key"
-        type="password"
-        required
-        autoComplete="new-password"
-        value={secretAccessKey}
-        onChange={(e) => setSecretAccessKey(e.target.value)}
-      />
+      {fields.map((field) =>
+        field.multiline ? (
+          <label key={field.name} className="block">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+              {field.label}
+            </span>
+            <textarea
+              required={!field.optional}
+              rows={6}
+              spellCheck={false}
+              autoComplete="off"
+              value={values[field.name] ?? ''}
+              onChange={set(field.name)}
+              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-xs focus:border-teal-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+            />
+          </label>
+        ) : (
+          <Field
+            key={field.name}
+            label={field.label}
+            type={field.secret ? 'password' : 'text'}
+            required={!field.optional}
+            autoComplete={field.secret ? 'new-password' : 'off'}
+            value={values[field.name] ?? ''}
+            onChange={set(field.name)}
+          />
+        ),
+      )}
     </FormDialog>
   );
 }

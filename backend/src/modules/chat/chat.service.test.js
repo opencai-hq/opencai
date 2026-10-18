@@ -67,7 +67,7 @@ function makeFullSession(over = {}) {
     id: SESSION_ID,
     userId: USER_ID,
     workspaceId: 'ws-1',
-    mode: 'AIOPS',
+    mode: 'CLOUDOPS',
     subMode: null,
     mutatingCommandCap: 10,
     mutatingCommandCount: 0,
@@ -323,7 +323,7 @@ test('cancelPendingCommand: happy path calls orchestrator.cancelCommand and neve
     id: SESSION_ID,
     userId: USER_ID,
     workspaceId: 'ws-1',
-    mode: 'AIOPS',
+    mode: 'CLOUDOPS',
     subMode: null,
     mutatingCommandCap: 10,
     mutatingCommandCount: 0,
@@ -428,7 +428,7 @@ test('createSession: 403 in a deactivated workspace, and nothing is created', as
 
   try {
     await assert.rejects(
-      () => service.createSession(USER_ID, { workspaceId: 'ws-1', mode: 'AIOPS' }),
+      () => service.createSession(USER_ID, { workspaceId: 'ws-1', mode: 'CLOUDOPS' }),
       (err) => {
         assert.equal(err.status, 403);
         assert.equal(err.code, ERROR_CODES.WORKSPACE_INACTIVE);
@@ -445,7 +445,7 @@ test('createSession: a persona with a non-null mutatingCommandCap wins over Chat
   const getData = setupCreateSessionMocks({ personaCap: 3, settingsDefault: 25 });
 
   try {
-    await service.createSession(USER_ID, { workspaceId: 'ws-1', mode: 'AIOPS' });
+    await service.createSession(USER_ID, { workspaceId: 'ws-1', mode: 'CLOUDOPS' });
     assert.equal(getData().mutatingCommandCap, 3);
   } finally {
     restoreAll();
@@ -456,7 +456,7 @@ test('createSession: a null persona cap falls back to ChatSettings.maxMutatingCo
   const getData = setupCreateSessionMocks({ personaCap: null, settingsDefault: 25 });
 
   try {
-    await service.createSession(USER_ID, { workspaceId: 'ws-1', mode: 'AIOPS' });
+    await service.createSession(USER_ID, { workspaceId: 'ws-1', mode: 'CLOUDOPS' });
     assert.equal(getData().mutatingCommandCap, 25);
   } finally {
     restoreAll();
@@ -467,7 +467,7 @@ test('createSession: both persona cap and ChatSettings missing falls back to the
   const getData = setupCreateSessionMocks({ personaCap: null, settingsDefault: undefined });
 
   try {
-    await service.createSession(USER_ID, { workspaceId: 'ws-1', mode: 'AIOPS' });
+    await service.createSession(USER_ID, { workspaceId: 'ws-1', mode: 'CLOUDOPS' });
     assert.equal(getData().mutatingCommandCap, 10);
   } finally {
     restoreAll();
@@ -572,14 +572,14 @@ test('listSessions: hasMessages filters out unused sessions and search covers ti
 
   try {
     await service.listSessions(USER_ID, {
-      mode: 'AIOPS',
+      mode: 'CLOUDOPS',
       hasMessages: true,
       search: 'audit',
       page: 1,
       pageSize: 5,
     });
     assert.equal(where.userId, USER_ID);
-    assert.equal(where.mode, 'AIOPS');
+    assert.equal(where.mode, 'CLOUDOPS');
     assert.deepEqual(where.messages, { some: {} });
     assert.deepEqual(where.OR[0], { title: { contains: 'audit', mode: 'insensitive' } });
 

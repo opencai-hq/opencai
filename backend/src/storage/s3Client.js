@@ -3,7 +3,7 @@ const config = require('../config/env');
 
 const s3Client = new S3Client({
   endpoint: config.s3Endpoint,
-  region: 'us-east-1',
+  region: config.s3Region,
   forcePathStyle: true,
   credentials: {
     accessKeyId: config.s3AccessKey,
