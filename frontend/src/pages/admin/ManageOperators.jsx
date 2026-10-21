@@ -1,20 +1,10 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
-import {
-  listOperators,
-  createOperator,
-  updateOperator,
-  deactivateOperator,
-  deleteOperator,
-  resetOperatorMfa,
-  resetOperatorPassword,
-  listOrganisations,
-} from '../../lib/adminApi';
+import { listOperators, createOperator, listOrganisations } from '../../lib/adminApi';
 import { useToast } from '../../lib/ToastContext';
-import { ConfirmDialog, Field, FormDialog } from '../../components/Dialog';
+import { Field, FormDialog } from '../../components/Dialog';
 import { MfaBadge } from '../../components/MfaBadge';
-import { EditEmailDialog } from '../../components/EditEmailDialog';
-import { TemporaryPasswordDialog } from '../../components/TemporaryPasswordDialog';
 import { AdminLayout } from './AdminLayout';
 
 function OrgCheckboxes({ organisations, selected, onChange }) {
@@ -44,7 +34,7 @@ function OrgCheckboxes({ organisations, selected, onChange }) {
   );
 }
 
-function OrgAccessField({ organisations, selected, onChange }) {
+export function OrgAccessField({ organisations, selected, onChange }) {
   return (
     <div>
       <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Organisation access</p>
@@ -99,34 +89,14 @@ function AddOperatorDialog({ organisations, busy, onSubmit, onClose }) {
   );
 }
 
-function EditOrganisationsDialog({ operator, organisations, busy, onSubmit, onClose }) {
-  const [organisationIds, setOrganisationIds] = useState(() =>
-    operator.organisations.map((o) => o.id),
-  );
-  return (
-    <FormDialog
-      title={`Organisations for "${operator.username}"`}
-      submitting={busy}
-      onSubmit={() => onSubmit(organisationIds)}
-      onClose={onClose}
-    >
-      <OrgAccessField
-        organisations={organisations}
-        selected={organisationIds}
-        onChange={setOrganisationIds}
-      />
-    </FormDialog>
-  );
-}
-
+// Each row opens the operator's own page (OperatorDetail), where every change
+// to them is made.
 export function ManageOperators() {
   const { token } = useAuth();
   const toast = useToast();
   const [operators, setOperators] = useState(null);
   const [organisations, setOrganisations] = useState([]);
-  // { type: 'add' | 'orgs' | 'email' | 'resetMfa' | 'resetPassword' | 'deactivate' | 'reactivate'
-  //   | 'delete', operator? } | { type: 'tempPassword', operator, temporaryPassword }
-  const [dialog, setDialog] = useState(null);
+  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
 
   function refresh() {
@@ -140,35 +110,19 @@ export function ManageOperators() {
 
   useEffect(refresh, [token]);
 
-  /** Runs a dialog's action; closes it on success, keeps it open on failure. */
-  async function run(action, success, failure) {
+  async function add(body) {
     setBusy(true);
     try {
-      await action();
-      toast.success(success);
-      setDialog(null);
+      await createOperator(token, body);
+      toast.success(`Operator "${body.username}" added.`);
+      setAdding(false);
       refresh();
     } catch (err) {
-      toast.error(err.message || failure);
+      toast.error(err.message || 'Could not add the operator.');
     } finally {
       setBusy(false);
     }
   }
-
-  async function resetPassword(operator) {
-    setBusy(true);
-    try {
-      const { temporaryPassword } = await resetOperatorPassword(token, operator.id);
-      setDialog({ type: 'tempPassword', operator, temporaryPassword });
-    } catch (err) {
-      toast.error(err.message || 'Could not reset the password.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const close = () => !busy && setDialog(null);
-  const op = dialog?.operator;
 
   return (
     <AdminLayout title="Manage Operators">
@@ -176,7 +130,7 @@ export function ManageOperators() {
         <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50">Manage Operators</h1>
         <button
           type="button"
-          onClick={() => setDialog({ type: 'add' })}
+          onClick={() => setAdding(true)}
           className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
         >
           + Add operator
@@ -187,206 +141,44 @@ export function ManageOperators() {
         {operators?.map((operator) => (
           <div
             key={operator.id}
-            className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900"
           >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="font-medium text-gray-900 dark:text-gray-100">
-                  {operator.username}
-                  {!operator.isActive && (
-                    <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                      Deactivated
-                    </span>
-                  )}
-                  <span className="ml-2">
-                    <MfaBadge enrolled={operator.mfaEnrolled} />
+            <div>
+              <p className="font-medium text-gray-900 dark:text-gray-100">
+                {operator.username}
+                {!operator.isActive && (
+                  <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                    Deactivated
                   </span>
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {operator.email || 'No email'}
-                  {' · '}
-                  {operator.organisations.map((o) => o.name).join(', ') ||
-                    'No Organisations assigned'}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => setDialog({ type: 'orgs', operator })}
-                  className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
-                >
-                  Edit Organisations
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDialog({ type: 'email', operator })}
-                  className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
-                >
-                  Edit email
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDialog({ type: 'resetPassword', operator })}
-                  className="text-sm font-medium text-gray-600 hover:underline dark:text-gray-300"
-                >
-                  Reset password
-                </button>
-                {operator.mfaEnrolled && (
-                  <button
-                    type="button"
-                    onClick={() => setDialog({ type: 'resetMfa', operator })}
-                    className="text-sm font-medium text-gray-600 hover:underline dark:text-gray-300"
-                  >
-                    Reset MFA
-                  </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDialog({ type: operator.isActive ? 'deactivate' : 'reactivate', operator })
-                  }
-                  className="text-sm font-medium text-gray-600 hover:underline dark:text-gray-300"
-                >
-                  {operator.isActive ? 'Deactivate' : 'Reactivate'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDialog({ type: 'delete', operator })}
-                  className="text-sm font-medium text-red-600 hover:underline"
-                >
-                  Delete
-                </button>
-              </div>
+                <span className="ml-2">
+                  <MfaBadge enrolled={operator.mfaEnrolled} />
+                </span>
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {operator.email || 'No email'}
+                {' · '}
+                {operator.organisations.map((o) => o.name).join(', ') ||
+                  'No Organisations assigned'}
+              </p>
             </div>
+            <Link
+              to={`/admin/operators/${operator.id}`}
+              className="rounded-lg border border-gray-300 px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              Edit
+            </Link>
           </div>
         ))}
         {operators?.length === 0 && <p className="text-sm text-gray-400">No operators yet.</p>}
       </div>
 
-      {dialog?.type === 'add' && (
+      {adding && (
         <AddOperatorDialog
           organisations={organisations}
           busy={busy}
-          onClose={close}
-          onSubmit={(body) =>
-            run(
-              () => createOperator(token, body),
-              `Operator "${body.username}" added.`,
-              'Could not add the operator.',
-            )
-          }
-        />
-      )}
-      {dialog?.type === 'orgs' && (
-        <EditOrganisationsDialog
-          operator={op}
-          organisations={organisations}
-          busy={busy}
-          onClose={close}
-          onSubmit={(organisationIds) =>
-            run(
-              () => updateOperator(token, op.id, { organisationIds }),
-              `Organisations for "${op.username}" updated.`,
-              "Could not update the operator's organisations.",
-            )
-          }
-        />
-      )}
-      {dialog?.type === 'email' && (
-        <EditEmailDialog
-          username={op.username}
-          email={op.email}
-          busy={busy}
-          onClose={close}
-          onSubmit={(email) =>
-            run(
-              () => updateOperator(token, op.id, { email }),
-              `Email for "${op.username}" updated.`,
-              'Could not update the email.',
-            )
-          }
-        />
-      )}
-      {dialog?.type === 'resetPassword' && (
-        <ConfirmDialog
-          title="Reset password?"
-          message={`Reset ${op.username}'s password? They will be signed out everywhere.`}
-          confirmLabel="Reset password"
-          busy={busy}
-          onClose={close}
-          onConfirm={() => resetPassword(op)}
-        />
-      )}
-      {dialog?.type === 'tempPassword' && (
-        <TemporaryPasswordDialog
-          username={op.username}
-          temporaryPassword={dialog.temporaryPassword}
-          onClose={close}
-        />
-      )}
-      {dialog?.type === 'deactivate' && (
-        <ConfirmDialog
-          title="Deactivate operator?"
-          message={`"${op.username}" will no longer be able to sign in. Their chat history is kept, and you can reactivate them later.`}
-          confirmLabel="Deactivate"
-          busy={busy}
-          onClose={close}
-          onConfirm={() =>
-            run(
-              () => deactivateOperator(token, op.id),
-              `Operator "${op.username}" deactivated.`,
-              'Could not deactivate the operator.',
-            )
-          }
-        />
-      )}
-      {dialog?.type === 'reactivate' && (
-        <ConfirmDialog
-          title="Reactivate operator?"
-          message={`"${op.username}" will be able to sign in again.`}
-          confirmLabel="Reactivate"
-          tone="primary"
-          busy={busy}
-          onClose={close}
-          onConfirm={() =>
-            run(
-              () => updateOperator(token, op.id, { isActive: true }),
-              `Operator "${op.username}" reactivated.`,
-              'Could not reactivate the operator.',
-            )
-          }
-        />
-      )}
-      {dialog?.type === 'resetMfa' && (
-        <ConfirmDialog
-          title="Reset MFA?"
-          message={`"${op.username}"'s authenticator and backup codes stop working. They set up MFA again (scanning a new QR code) at their next sign-in.`}
-          confirmLabel="Reset MFA"
-          busy={busy}
-          onClose={close}
-          onConfirm={() =>
-            run(
-              () => resetOperatorMfa(token, op.id),
-              `MFA reset for "${op.username}".`,
-              'Could not reset MFA.',
-            )
-          }
-        />
-      )}
-      {dialog?.type === 'delete' && (
-        <ConfirmDialog
-          title="Delete operator?"
-          message={`This permanently deletes "${op.username}". Operators with chat history can't be deleted; deactivate them instead.`}
-          confirmLabel="Delete"
-          busy={busy}
-          onClose={close}
-          onConfirm={() =>
-            run(
-              () => deleteOperator(token, op.id),
-              `Operator "${op.username}" deleted.`,
-              'Could not delete the operator.',
-            )
-          }
+          onClose={() => !busy && setAdding(false)}
+          onSubmit={add}
         />
       )}
     </AdminLayout>

@@ -7,6 +7,7 @@ const router = express.Router();
 
 router.get('/', controller.list);
 router.post('/', validate(createOperatorSchema), controller.create);
+router.get('/:id', controller.get);
 router.patch('/:id', validate(updateOperatorSchema), controller.update);
 router.post('/:id/deactivate', controller.deactivate);
 router.delete('/:id', controller.remove);

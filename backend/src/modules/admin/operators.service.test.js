@@ -233,3 +233,40 @@ test('updateOperator: null clears the email', async () => {
     restore();
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* getOperator                                                                */
+/* -------------------------------------------------------------------------- */
+
+test('getOperator: returns the operator with email and organisations', async () => {
+  const originalFindFirst = prisma.user.findFirst;
+  prisma.user.findUnique = async () => ({ id: USER_ID, role: ROLES.OPERATOR });
+  prisma.user.findFirst = async ({ where }) => ({
+    id: where.id,
+    username: 'op',
+    email: 'op@example.com',
+    isActive: true,
+    createdAt: new Date(0),
+    totpSecretEncrypted: 'secret',
+    organisations: [{ organisation: { id: 'org-1', name: 'Acme' } }],
+  });
+  try {
+    const operator = await service.getOperator(USER_ID);
+    assert.equal(operator.email, 'op@example.com');
+    assert.equal(operator.mfaEnrolled, true);
+    assert.deepEqual(operator.organisations, [{ id: 'org-1', name: 'Acme' }]);
+    assert.equal('totpSecretEncrypted' in operator, false);
+  } finally {
+    prisma.user.findFirst = originalFindFirst;
+    restoreAll();
+  }
+});
+
+test('getOperator: 404 for a non-Operator', async () => {
+  prisma.user.findUnique = async () => ({ id: USER_ID, role: ROLES.ADMIN });
+  try {
+    await assert.rejects(service.getOperator(USER_ID), { status: 404 });
+  } finally {
+    restoreAll();
+  }
+});

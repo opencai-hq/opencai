@@ -72,6 +72,12 @@ async function findOperatorOrThrow(userId) {
   return user;
 }
 
+async function getOperator(userId) {
+  await findOperatorOrThrow(userId);
+  const user = await prisma.user.findFirst({ where: { id: userId }, select: OPERATOR_SELECT });
+  return serialize(user);
+}
+
 async function updateOperator(userId, { organisationIds, isActive, email }) {
   await findOperatorOrThrow(userId);
   await assertEmailAvailable(email, userId);
@@ -151,6 +157,7 @@ async function resetOperatorPassword(actor, userId) {
 module.exports = {
   listOperators,
   createOperator,
+  getOperator,
   updateOperator,
   deactivateOperator,
   deleteOperator,

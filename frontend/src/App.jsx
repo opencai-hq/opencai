@@ -16,6 +16,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { ManageAdministrators } from './pages/admin/ManageAdministrators';
 import { ManageOperators } from './pages/admin/ManageOperators';
+import { OperatorDetail } from './pages/admin/OperatorDetail';
 import { ManageOrganisations } from './pages/admin/ManageOrganisations';
 import { OrganisationDetail } from './pages/admin/OrganisationDetail';
 import { ManageChatSettings } from './pages/admin/ManageChatSettings';
@@ -78,6 +79,14 @@ function App() {
                   element={
                     <AdminRoute>
                       <ManageOperators />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="/admin/operators/:id"
+                  element={
+                    <AdminRoute>
+                      <OperatorDetail />
                     </AdminRoute>
                   }
                 />

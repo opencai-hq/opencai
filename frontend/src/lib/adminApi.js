@@ -16,6 +16,7 @@ export const resetAdministratorPassword = (token, id) =>
 
 // Operators
 export const listOperators = (token) => apiRequest('/api/admin/operators', { token });
+export const getOperator = (token, id) => apiRequest(`/api/admin/operators/${id}`, { token });
 export const createOperator = (token, body) =>
   apiRequest('/api/admin/operators', { method: 'POST', token, body });
 export const updateOperator = (token, id, body) =>

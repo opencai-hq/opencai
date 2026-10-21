@@ -19,6 +19,14 @@ async function create(req, res, next) {
   }
 }
 
+async function get(req, res, next) {
+  try {
+    res.json(await service.getOperator(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function update(req, res, next) {
   try {
     res.json(await service.updateOperator(req.params.id, req.body));
@@ -61,4 +69,4 @@ async function resetPassword(req, res, next) {
   }
 }
 
-module.exports = { list, create, update, deactivate, remove, resetMfa, resetPassword };
+module.exports = { list, create, get, update, deactivate, remove, resetMfa, resetPassword };
