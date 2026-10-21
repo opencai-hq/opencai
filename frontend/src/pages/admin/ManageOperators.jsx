@@ -7,11 +7,14 @@ import {
   deactivateOperator,
   deleteOperator,
   resetOperatorMfa,
+  resetOperatorPassword,
   listOrganisations,
 } from '../../lib/adminApi';
 import { useToast } from '../../lib/ToastContext';
 import { ConfirmDialog, Field, FormDialog } from '../../components/Dialog';
 import { MfaBadge } from '../../components/MfaBadge';
+import { EditEmailDialog } from '../../components/EditEmailDialog';
+import { TemporaryPasswordDialog } from '../../components/TemporaryPasswordDialog';
 import { AdminLayout } from './AdminLayout';
 
 function OrgCheckboxes({ organisations, selected, onChange }) {
@@ -55,13 +58,16 @@ function OrgAccessField({ organisations, selected, onChange }) {
 function AddOperatorDialog({ organisations, busy, onSubmit, onClose }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
   const [organisationIds, setOrganisationIds] = useState([]);
   return (
     <FormDialog
       title="Add operator"
       submitLabel="Add operator"
       submitting={busy}
-      onSubmit={() => onSubmit({ username, password, organisationIds })}
+      onSubmit={() =>
+        onSubmit({ username, password, email: email.trim() || undefined, organisationIds })
+      }
       onClose={onClose}
     >
       <Field
@@ -77,6 +83,12 @@ function AddOperatorDialog({ organisations, busy, onSubmit, onClose }) {
         minLength={8}
         value={password}
         onChange={(e) => setPassword(e.target.value)}
+      />
+      <Field
+        label="Email (optional, for password reset links)"
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
       />
       <OrgAccessField
         organisations={organisations}
@@ -112,7 +124,8 @@ export function ManageOperators() {
   const toast = useToast();
   const [operators, setOperators] = useState(null);
   const [organisations, setOrganisations] = useState([]);
-  // { type: 'add' | 'orgs' | 'resetMfa' | 'deactivate' | 'reactivate' | 'delete', operator? }
+  // { type: 'add' | 'orgs' | 'email' | 'resetMfa' | 'resetPassword' | 'deactivate' | 'reactivate'
+  //   | 'delete', operator? } | { type: 'tempPassword', operator, temporaryPassword }
   const [dialog, setDialog] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -137,6 +150,18 @@ export function ManageOperators() {
       refresh();
     } catch (err) {
       toast.error(err.message || failure);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetPassword(operator) {
+    setBusy(true);
+    try {
+      const { temporaryPassword } = await resetOperatorPassword(token, operator.id);
+      setDialog({ type: 'tempPassword', operator, temporaryPassword });
+    } catch (err) {
+      toast.error(err.message || 'Could not reset the password.');
     } finally {
       setBusy(false);
     }
@@ -178,6 +203,8 @@ export function ManageOperators() {
                   </span>
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {operator.email || 'No email'}
+                  {' · '}
                   {operator.organisations.map((o) => o.name).join(', ') ||
                     'No Organisations assigned'}
                 </p>
@@ -189,6 +216,20 @@ export function ManageOperators() {
                   className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
                 >
                   Edit Organisations
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDialog({ type: 'email', operator })}
+                  className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
+                >
+                  Edit email
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDialog({ type: 'resetPassword', operator })}
+                  className="text-sm font-medium text-gray-600 hover:underline dark:text-gray-300"
+                >
+                  Reset password
                 </button>
                 {operator.mfaEnrolled && (
                   <button
@@ -249,6 +290,38 @@ export function ManageOperators() {
               "Could not update the operator's organisations.",
             )
           }
+        />
+      )}
+      {dialog?.type === 'email' && (
+        <EditEmailDialog
+          username={op.username}
+          email={op.email}
+          busy={busy}
+          onClose={close}
+          onSubmit={(email) =>
+            run(
+              () => updateOperator(token, op.id, { email }),
+              `Email for "${op.username}" updated.`,
+              'Could not update the email.',
+            )
+          }
+        />
+      )}
+      {dialog?.type === 'resetPassword' && (
+        <ConfirmDialog
+          title="Reset password?"
+          message={`Reset ${op.username}'s password? They will be signed out everywhere.`}
+          confirmLabel="Reset password"
+          busy={busy}
+          onClose={close}
+          onConfirm={() => resetPassword(op)}
+        />
+      )}
+      {dialog?.type === 'tempPassword' && (
+        <TemporaryPasswordDialog
+          username={op.username}
+          temporaryPassword={dialog.temporaryPassword}
+          onClose={close}
         />
       )}
       {dialog?.type === 'deactivate' && (

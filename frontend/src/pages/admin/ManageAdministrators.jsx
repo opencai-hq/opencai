@@ -5,21 +5,26 @@ import {
   createAdministrator,
   deleteAdministrator,
   resetAdministratorMfa,
+  resetAdministratorPassword,
+  updateAdministrator,
 } from '../../lib/adminApi';
 import { MfaBadge } from '../../components/MfaBadge';
 import { useToast } from '../../lib/ToastContext';
 import { ConfirmDialog, Field, FormDialog } from '../../components/Dialog';
+import { EditEmailDialog } from '../../components/EditEmailDialog';
+import { TemporaryPasswordDialog } from '../../components/TemporaryPasswordDialog';
 import { AdminLayout } from './AdminLayout';
 
 function AddAdministratorDialog({ busy, onSubmit, onClose }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
   return (
     <FormDialog
       title="Add administrator"
       submitLabel="Add administrator"
       submitting={busy}
-      onSubmit={() => onSubmit({ username, password })}
+      onSubmit={() => onSubmit({ username, password, email: email.trim() || undefined })}
       onClose={onClose}
     >
       <Field
@@ -36,6 +41,12 @@ function AddAdministratorDialog({ busy, onSubmit, onClose }) {
         value={password}
         onChange={(e) => setPassword(e.target.value)}
       />
+      <Field
+        label="Email (optional, for password reset links)"
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
     </FormDialog>
   );
 }
@@ -44,9 +55,11 @@ export function ManageAdministrators() {
   const { token, user } = useAuth();
   const toast = useToast();
   const [admins, setAdmins] = useState(null);
-  // Only the master admin may reset administrators' MFA (the backend enforces it).
+  // Only the master admin may reset administrators' MFA or password, or edit
+  // their emails (the backend enforces it).
   const iAmMaster = Boolean(admins?.some((a) => a.id === user?.id && a.isMasterAdmin));
-  // { type: 'add' } | { type: 'delete' | 'resetMfa', admin }
+  // { type: 'add' } | { type: 'delete' | 'resetMfa' | 'resetPassword' | 'email', admin }
+  //   | { type: 'tempPassword', admin, temporaryPassword }
   const [dialog, setDialog] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -68,6 +81,18 @@ export function ManageAdministrators() {
       refresh();
     } catch (err) {
       toast.error(err.message || failure);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetPassword(admin) {
+    setBusy(true);
+    try {
+      const { temporaryPassword } = await resetAdministratorPassword(token, admin.id);
+      setDialog({ type: 'tempPassword', admin, temporaryPassword });
+    } catch (err) {
+      toast.error(err.message || 'Could not reset the password.');
     } finally {
       setBusy(false);
     }
@@ -95,6 +120,7 @@ export function ManageAdministrators() {
           <thead className="bg-gray-50 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
             <tr>
               <th className="px-4 py-2 font-medium">Username</th>
+              <th className="px-4 py-2 font-medium">Email</th>
               <th className="px-4 py-2 font-medium">MFA</th>
               <th className="px-4 py-2 font-medium">Created</th>
               <th className="px-4 py-2 font-medium"></th>
@@ -111,6 +137,9 @@ export function ManageAdministrators() {
                     </span>
                   )}
                 </td>
+                <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
+                  {admin.email || '—'}
+                </td>
                 <td className="px-4 py-2">
                   <MfaBadge enrolled={admin.mfaEnrolled} />
                 </td>
@@ -119,6 +148,24 @@ export function ManageAdministrators() {
                 </td>
                 <td className="px-4 py-2 text-right">
                   <div className="flex justify-end gap-3">
+                    {iAmMaster && (
+                      <button
+                        type="button"
+                        onClick={() => setDialog({ type: 'email', admin })}
+                        className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
+                      >
+                        Edit email
+                      </button>
+                    )}
+                    {iAmMaster && admin.id !== user?.id && (
+                      <button
+                        type="button"
+                        onClick={() => setDialog({ type: 'resetPassword', admin })}
+                        className="text-sm font-medium text-gray-600 hover:underline dark:text-gray-300"
+                      >
+                        Reset password
+                      </button>
+                    )}
                     {iAmMaster && admin.mfaEnrolled && (
                       <button
                         type="button"
@@ -143,7 +190,7 @@ export function ManageAdministrators() {
             ))}
             {admins?.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-gray-400">
+                <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
                   No administrators yet.
                 </td>
               </tr>
@@ -156,13 +203,45 @@ export function ManageAdministrators() {
         <AddAdministratorDialog
           busy={busy}
           onClose={close}
-          onSubmit={({ username, password }) =>
+          onSubmit={(body) =>
             run(
-              () => createAdministrator(token, { username, password }),
-              `Administrator "${username}" added.`,
+              () => createAdministrator(token, body),
+              `Administrator "${body.username}" added.`,
               'Could not add the administrator.',
             )
           }
+        />
+      )}
+      {dialog?.type === 'email' && (
+        <EditEmailDialog
+          username={dialog.admin.username}
+          email={dialog.admin.email}
+          busy={busy}
+          onClose={close}
+          onSubmit={(email) =>
+            run(
+              () => updateAdministrator(token, dialog.admin.id, { email }),
+              `Email for "${dialog.admin.username}" updated.`,
+              'Could not update the email.',
+            )
+          }
+        />
+      )}
+      {dialog?.type === 'resetPassword' && (
+        <ConfirmDialog
+          title="Reset password?"
+          message={`Reset ${dialog.admin.username}'s password? They will be signed out everywhere.`}
+          confirmLabel="Reset password"
+          busy={busy}
+          onClose={close}
+          onConfirm={() => resetPassword(dialog.admin)}
+        />
+      )}
+      {dialog?.type === 'tempPassword' && (
+        <TemporaryPasswordDialog
+          username={dialog.admin.username}
+          temporaryPassword={dialog.temporaryPassword}
+          onClose={close}
         />
       )}
       {dialog?.type === 'delete' && (
