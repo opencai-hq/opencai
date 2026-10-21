@@ -5,6 +5,8 @@ const organisationsRoute = require('./organisations.route');
 const chatSettingsRoute = require('./chatSettings.route');
 const brandingRoute = require('./branding.route');
 const chatsRoute = require('./chats.route');
+const mailSettingsRoute = require('./mailSettings.route');
+const { requireMasterAdmin } = require('../../middleware/rbac');
 
 const router = express.Router();
 
@@ -14,5 +16,6 @@ router.use('/organisations', organisationsRoute);
 router.use('/chat-settings', chatSettingsRoute);
 router.use('/branding', brandingRoute);
 router.use('/chats', chatsRoute);
+router.use('/mail-settings', requireMasterAdmin, mailSettingsRoute);
 
 module.exports = router;
