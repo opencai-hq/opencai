@@ -19,6 +19,7 @@ import { OrganisationDetail } from './pages/admin/OrganisationDetail';
 import { ManageChatSettings } from './pages/admin/ManageChatSettings';
 import { ManageBranding } from './pages/admin/ManageBranding';
 import { ManageChats } from './pages/admin/ManageChats';
+import { ManageEmail } from './pages/admin/ManageEmail';
 import { OperatorPage } from './pages/operator/OperatorPage';
 import { ChatHistoryPage } from './pages/operator/ChatHistoryPage';
 
@@ -113,6 +114,14 @@ function App() {
                   element={
                     <AdminRoute>
                       <ManageChats />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="/admin/email"
+                  element={
+                    <AdminRoute>
+                      <ManageEmail />
                     </AdminRoute>
                   }
                 />

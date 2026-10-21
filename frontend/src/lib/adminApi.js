@@ -66,6 +66,13 @@ export const listAgentPersonas = (token) =>
 export const updateAgentPersona = (token, body) =>
   apiRequest('/api/admin/chat-settings/personas', { method: 'PUT', token, body });
 
+// Email (master admin only)
+export const getMailSettings = (token) => apiRequest('/api/admin/mail-settings', { token });
+export const updateMailSettings = (token, body) =>
+  apiRequest('/api/admin/mail-settings', { method: 'PUT', token, body });
+export const sendTestEmail = (token, to) =>
+  apiRequest('/api/admin/mail-settings/test', { method: 'POST', token, body: { to } });
+
 // Branding
 export const getBranding = () => apiRequest('/branding');
 export const updateBranding = (token, { displayName, logoFile, loginImageFile, faviconFile }) => {

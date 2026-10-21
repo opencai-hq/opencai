@@ -179,6 +179,23 @@ cd backend && npm run reset-password -- admin                 # dev.sh
 It prints a temporary password. Add `--reset-mfa` if the authenticator is lost too; the user then
 sets MFA up again at sign-in. The same command works for any username.
 
+### Password reset by email
+
+Optionally, people can reset their own password from the sign-in page with an emailed link. The
+master admin sets this up in Manage Email: an SMTP server (host, port, security, and username and
+password if it needs them), a From address, and the public URL people use to open OpenCAI, which
+the links point to. Use "Send test email" to check the settings, then switch sending on.
+
+- The backend must be able to reach the SMTP server. Under Docker Compose, a server on the host
+  machine is `host.docker.internal`, not `localhost`.
+- Each user needs an email address, set by an administrator in Manage Operators or Manage
+  Administrators.
+- A link works once and expires after 30 minutes. The user still enters their MFA code when they
+  sign in afterwards.
+
+Until email is set up, or for a user with no email address, the sign-in page tells people to
+contact an administrator.
+
 ## Your own database or bucket
 
 Both run modes work with any Postgres and any S3-compatible store (AWS S3, MinIO, on-premises

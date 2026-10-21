@@ -28,6 +28,11 @@ const SECTIONS = [
     description: "This instance's display name, logo, and login image.",
   },
   {
+    to: '/admin/email',
+    title: 'Manage Email',
+    description: 'Outgoing mail for password reset links (master admin only).',
+  },
+  {
     to: '/admin/chats',
     title: 'Manage Chats',
     description: 'Read-only oversight of every chat conversation.',
