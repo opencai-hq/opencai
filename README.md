@@ -37,7 +37,7 @@ The script asks whether to use the bundled Postgres and MinIO containers or your
 S3 bucket, writes the configuration, and builds and starts everything. To do the same steps by
 hand, see the [setup guide](docs/SETUP.md).
 
-Open http://localhost:8080 and sign in as `admin` / `admin`. You will be asked to set up MFA;
+Open http://localhost:5270 and sign in as `admin` / `admin`. You will be asked to set up MFA;
 change the password after that.
 
 ## Learn more

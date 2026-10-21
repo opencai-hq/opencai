@@ -667,7 +667,7 @@ function anchors(x, y, w, h) {
     [236, 50, ['Build the sandbox image', { t: 'same as step 5', style: 'detail' }]],
     [304, 84, [{ t: 'docker compose up --build -d', style: 'mono' }, 'postgres · minio · backend · frontend', 'migrations run as the backend starts']],
     [416, 70, [{ t: 'docker compose exec backend', style: 'mono' }, { t: 'npm run prisma:seed', style: 'mono' }]],
-    [514, 50, ['web app :8080 · API :4000']],
+    [514, 50, ['web app :5270 · API :5271']],
   ];
   let p2;
   alt.forEach(([y, h, lines]) => {

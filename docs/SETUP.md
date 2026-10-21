@@ -7,7 +7,7 @@ There are two ways to run OpenCAI. Pick one.
 | Use it to | run or try OpenCAI | develop OpenCAI, with live reload |
 | You install | Git and Docker | Git, Docker and Node.js 24+ |
 | Postgres and MinIO | started for you, or use your own | you provide them |
-| Web app | http://localhost:8080 | http://localhost:5270 |
+| Web app | http://localhost:5270 | http://localhost:5270 |
 
 Docker is needed in both: the AI agent runs every command in a Docker container.
 
@@ -56,8 +56,8 @@ run again later to change an answer; it never replaces an existing `JWT_SECRET` 
 
 When it finishes:
 
-- Web app: http://localhost:8080
-- Backend API: http://localhost:4000
+- Web app: http://localhost:5270
+- Backend API: http://localhost:5271
 
 Continue with [First sign-in](#first-sign-in).
 
@@ -77,8 +77,8 @@ Edit two files before the first start:
 - `backend/.env`: set `JWT_SECRET` to the output of `openssl rand -base64 48` and
   `MASTER_ENCRYPTION_KEY` to the output of `openssl rand -base64 32`. Under Compose the database
   and storage values in this file are not used; `docker-compose.yml` sets them.
-- `frontend/.env`: set `VITE_API_BASE_URL=http://localhost:4000`. Under Compose the backend
-  listens on port 4000, and this value is built into the web app.
+- `frontend/.env`: set `VITE_API_BASE_URL=http://localhost:5271`. Under Compose the backend
+  listens on port 5271, and this value is built into the web app.
 
 Then build the sandbox images and start the stack:
 
@@ -90,8 +90,8 @@ docker compose up --build -d
 docker compose exec backend npm run prisma:seed   # first run only
 ```
 
-- Web app: http://localhost:8080
-- Backend API: http://localhost:4000
+- Web app: http://localhost:5270
+- Backend API: http://localhost:5271
 
 Continue with [First sign-in](#first-sign-in). See [Notes on the Docker Compose run](#notes-on-the-docker-compose-run)
 for how to stop the stack and for the security notes on this setup.

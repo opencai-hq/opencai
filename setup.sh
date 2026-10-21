@@ -193,7 +193,7 @@ ensure_secret JWT_SECRET 48
 ensure_secret MASTER_ENCRYPTION_KEY 32
 
 if [ "$RUN_MODE" = 1 ]; then
-  set_env_var "$FRONTEND_ENV" VITE_API_BASE_URL "http://localhost:4000"
+  set_env_var "$FRONTEND_ENV" VITE_API_BASE_URL "http://localhost:5271"
 
   if [ "$DB_CHOICE" = 2 ]; then
     set_env_var "$COMPOSE_ENV" OPENCAI_DATABASE_URL "$(quoted "$DATABASE_URL")"
@@ -289,7 +289,7 @@ docker compose up --build -d
 echo "Waiting for the backend (it applies database migrations first)..."
 ready=""
 for _ in $(seq 1 60); do
-  if curl -s -o /dev/null http://localhost:4000/; then
+  if curl -s -o /dev/null http://localhost:5271/; then
     ready=1
     break
   fi
@@ -307,5 +307,5 @@ if confirm "Create the admin user and default data? Say no if this database was 
 fi
 
 echo
-echo "OpenCAI is running: http://localhost:8080"
+echo "OpenCAI is running: http://localhost:5270"
 echo "Sign in as admin / admin, enrol MFA and change the password."

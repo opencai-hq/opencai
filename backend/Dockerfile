@@ -19,7 +19,7 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-EXPOSE 4000
+EXPOSE 5271
 
 # Migrations run every start, not just the first: `prisma migrate deploy` is a
 # no-op when the schema is already up to date, so this is safe to repeat.

@@ -42,7 +42,7 @@ function loadConfig() {
 
   // Optional: an explicit CORS origin for when the frontend is served from a
   // different origin than the backend (e.g. the containerized run, where
-  // nginx serves the frontend on :8080 and the backend listens on :4000).
+  // nginx serves the frontend on :5270 and the backend listens on :5271).
   // When unset, falls back to the existing NODE_ENV-based behavior.
   const corsOrigin = process.env.CORS_ORIGIN || undefined;
 

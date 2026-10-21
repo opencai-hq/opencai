@@ -82,15 +82,15 @@ services:
       # Browser-facing URL for uploaded branding assets -- minio:9000 is only
       # resolvable on the compose network, not from a browser on the host.
       S3_PUBLIC_URL: ${OPENCAI_S3_PUBLIC_URL:-http://localhost:9000}
-      # Frontend (nginx, :8080) and backend (:4000) are different origins
+      # Frontend (nginx, :5270) and backend (:5271) are different origins
       # under compose; without this, NODE_ENV=production below makes CORS
       # reject every browser request from the frontend.
-      CORS_ORIGIN: http://localhost:8080
+      CORS_ORIGIN: http://localhost:5270
       NODE_ENV: production
-      # Pins the in-container listen port to match the "4000:4000" mapping
+      # Pins the in-container listen port to match the "5271:5271" mapping
       # below regardless of backend/.env's own PORT (which still governs
       # dev.sh).
-      PORT: "4000"
+      PORT: "5271"
     # `required: false` lets the backend start when setup.sh has switched a
     # bundled service off in favour of your own (needs Docker Compose 2.20+).
     depends_on:
@@ -116,13 +116,13 @@ services:
       # be built on the host separately; they are not built by this compose file.
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "4000:4000"
+      - "5271:5271"
     networks: [opencai]
 
   frontend:
     build: ./frontend
     ports:
-      - "8080:80"
+      - "5270:80"
     depends_on: [backend]
     restart: unless-stopped
     networks: [opencai]
