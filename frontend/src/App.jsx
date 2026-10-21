@@ -10,6 +10,8 @@ import { LoginPage } from './pages/LoginPage';
 import { MfaVerifyPage } from './pages/MfaVerifyPage';
 import { MfaEnrollPage } from './pages/MfaEnrollPage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { ManageAdministrators } from './pages/admin/ManageAdministrators';
@@ -45,6 +47,8 @@ function App() {
                 <Route path="/mfa/verify" element={<MfaVerifyPage />} />
                 <Route path="/mfa/enroll" element={<MfaEnrollPage />} />
                 <Route path="/change-password" element={<ChangePasswordPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
                 <Route
                   path="/dashboard"
                   element={

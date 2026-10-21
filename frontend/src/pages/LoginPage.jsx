@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import defaultLogo from '../assets/opencai-logo.png';
 import loginLogo from '../assets/opencai-login-logo.png';
 import { useAuth } from '../lib/AuthContext';
@@ -106,13 +106,12 @@ export function LoginPage() {
                 >
                   Password
                 </label>
-                <button
-                  type="button"
-                  title="Contact your administrator to reset your password."
+                <Link
+                  to="/forgot-password"
                   className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
                 >
                   Forgot password?
-                </button>
+                </Link>
               </div>
               <input
                 id="password"

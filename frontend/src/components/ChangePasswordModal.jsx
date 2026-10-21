@@ -7,9 +7,7 @@ export function ChangePasswordModal({ onClose }) {
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          Change Password
-        </h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Change Password</h2>
 
         {success ? (
           <>

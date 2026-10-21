@@ -26,3 +26,18 @@ export function changePassword(token, currentPassword, newPassword) {
     body: { currentPassword, newPassword },
   });
 }
+
+export function getPasswordResetAvailability() {
+  return apiRequest('/api/auth/password-reset/available');
+}
+
+export function requestPasswordReset(identifier) {
+  return apiRequest('/api/auth/password-reset/request', { method: 'POST', body: { identifier } });
+}
+
+export function confirmPasswordReset(token, newPassword) {
+  return apiRequest('/api/auth/password-reset/confirm', {
+    method: 'POST',
+    body: { token, newPassword },
+  });
+}
