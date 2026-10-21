@@ -43,8 +43,8 @@ async function verifyMfa(req, res, next) {
 async function changePassword(req, res, next) {
   try {
     const { currentPassword, newPassword } = req.body;
-    await authService.changePassword(req.user.id, currentPassword, newPassword);
-    res.status(200).json({ success: true });
+    const { token } = await authService.changePassword(req.user.id, currentPassword, newPassword);
+    res.status(200).json({ success: true, token });
   } catch (err) {
     next(err);
   }

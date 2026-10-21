@@ -1,6 +1,6 @@
 const express = require('express');
 const { validate } = require('../../middleware/validate');
-const { requireAuth } = require('../../middleware/auth');
+const { requireAuthAllowingPasswordChange } = require('../../middleware/auth');
 const controller = require('./auth.controller');
 const {
   loginSchema,
@@ -18,7 +18,7 @@ router.post('/mfa/enroll/confirm', validate(confirmEnrollmentSchema), controller
 router.post('/mfa/verify', validate(verifyMfaSchema), controller.verifyMfa);
 router.post(
   '/change-password',
-  requireAuth,
+  requireAuthAllowingPasswordChange,
   validate(changePasswordSchema),
   controller.changePassword,
 );

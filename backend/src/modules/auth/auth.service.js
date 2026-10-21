@@ -9,15 +9,32 @@ const prisma = require('../../config/db');
 const envelope = require('../../crypto/envelope');
 const { AppError } = require('../../middleware/errorHandler');
 const { ERROR_CODES } = require('../../constants/errors');
+const { AUDIT_ACTIONS, AUDIT_OUTCOMES } = require('../../constants/auditActions');
+const { BCRYPT_COST, setUserPassword } = require('./passwords');
 
 const SESSION_TOKEN_EXPIRY = '12h';
 const MFA_TOKEN_EXPIRY = '10m';
 const ENROLLMENT_TOKEN_EXPIRY = '10m';
 const BACKUP_CODE_COUNT = 10;
-const BCRYPT_COST = 12;
 
 function signToken(payload, expiresIn) {
   return jwt.sign(payload, config.jwtSecret, { expiresIn });
+}
+
+// `sv` ties the session to the user's current sessionVersion: middleware/auth
+// rejects it once a password change or reset has moved the version on.
+function issueSessionToken(user) {
+  return signToken(
+    { sub: user.id, username: user.username, role: user.role, sv: user.sessionVersion },
+    SESSION_TOKEN_EXPIRY,
+  );
+}
+
+// An mfa-pending token from before a password reset must not finish signing in.
+function assertSessionVersion(payload, user) {
+  if ((payload.sv ?? 0) !== user.sessionVersion) {
+    throw new AppError(401, ERROR_CODES.MFA_TOKEN_INVALID);
+  }
 }
 
 function verifyToken(token, expectedPurpose, errorCode) {
@@ -75,18 +92,22 @@ async function login(username, password) {
   }
 
   const mfaEnrolled = Boolean(user.totpSecretEncrypted);
-  const mfaToken = signToken({ sub: user.id, purpose: 'mfa-pending' }, MFA_TOKEN_EXPIRY);
+  const mfaToken = signToken(
+    { sub: user.id, purpose: 'mfa-pending', sv: user.sessionVersion },
+    MFA_TOKEN_EXPIRY,
+  );
 
   return { mfaToken, mfaEnrolled };
 }
 
 async function startEnrollment(mfaToken) {
-  const { sub: userId } = verifyToken(mfaToken, 'mfa-pending');
+  const payload = verifyToken(mfaToken, 'mfa-pending');
 
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await prisma.user.findUnique({ where: { id: payload.sub } });
   if (!user) {
     throw new AppError(401, ERROR_CODES.MFA_TOKEN_INVALID);
   }
+  assertSessionVersion(payload, user);
   if (user.totpSecretEncrypted) {
     throw new AppError(409, ERROR_CODES.MFA_ALREADY_ENROLLED);
   }
@@ -101,7 +122,7 @@ async function startEnrollment(mfaToken) {
   const qrCodeDataUrl = await QRCode.toDataURL(otpauthUri);
 
   const enrollmentToken = signToken(
-    { sub: user.id, purpose: 'mfa-enroll', secret },
+    { sub: user.id, purpose: 'mfa-enroll', secret, sv: user.sessionVersion },
     ENROLLMENT_TOKEN_EXPIRY,
   );
 
@@ -109,7 +130,14 @@ async function startEnrollment(mfaToken) {
 }
 
 async function confirmEnrollment(enrollmentToken, code) {
-  const { sub: userId, secret } = verifyToken(enrollmentToken, 'mfa-enroll');
+  const payload = verifyToken(enrollmentToken, 'mfa-enroll');
+  const { sub: userId, secret } = payload;
+
+  const existing = await prisma.user.findUnique({ where: { id: userId } });
+  if (!existing) {
+    throw new AppError(401, ERROR_CODES.MFA_TOKEN_INVALID);
+  }
+  assertSessionVersion(payload, existing);
 
   if (!(await verifyTotpCode(secret, code))) {
     throw new AppError(401, ERROR_CODES.MFA_CODE_INVALID);
@@ -128,29 +156,30 @@ async function confirmEnrollment(enrollmentToken, code) {
     },
   });
 
-  const token = signToken(
-    { sub: user.id, username: user.username, role: user.role },
-    SESSION_TOKEN_EXPIRY,
-  );
-
-  return { token, backupCodes };
+  return {
+    token: issueSessionToken(user),
+    backupCodes,
+    mustChangePassword: user.mustChangePassword,
+  };
 }
 
 async function verifyMfa(mfaToken, code) {
-  const { sub: userId } = verifyToken(mfaToken, 'mfa-pending');
+  const payload = verifyToken(mfaToken, 'mfa-pending');
+  const userId = payload.sub;
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || !user.totpSecretEncrypted) {
     throw new AppError(409, ERROR_CODES.MFA_NOT_ENROLLED);
   }
+  assertSessionVersion(payload, user);
+  const session = () => ({
+    token: issueSessionToken(user),
+    mustChangePassword: user.mustChangePassword,
+  });
 
   const secret = envelope.decrypt(user.totpSecretEncrypted);
   if (await verifyTotpCode(secret, code)) {
-    const token = signToken(
-      { sub: user.id, username: user.username, role: user.role },
-      SESSION_TOKEN_EXPIRY,
-    );
-    return { token };
+    return session();
   }
 
   // Fall back to a one-time backup code.
@@ -160,11 +189,7 @@ async function verifyMfa(mfaToken, code) {
         where: { id: userId },
         data: { backupCodesHashed: user.backupCodesHashed.filter((c) => c !== hashedCode) },
       });
-      const token = signToken(
-        { sub: user.id, username: user.username, role: user.role },
-        SESSION_TOKEN_EXPIRY,
-      );
-      return { token };
+      return session();
     }
   }
 
@@ -182,8 +207,18 @@ async function changePassword(userId, currentPassword, newPassword) {
     throw new AppError(401, ERROR_CODES.INVALID_CREDENTIALS);
   }
 
-  const passwordHash = await bcrypt.hash(newPassword, BCRYPT_COST);
-  await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+  const updated = await setUserPassword(userId, newPassword, { mustChangePassword: false });
+  await prisma.auditLog.create({
+    data: {
+      actorUserId: userId,
+      action: AUDIT_ACTIONS.PASSWORD_CHANGED,
+      outcome: AUDIT_OUTCOMES.SUCCESS,
+    },
+  });
+
+  // The change signed out every older session, this one included -- hand
+  // back a fresh token so the user stays signed in where they made it.
+  return { token: issueSessionToken(updated) };
 }
 
 module.exports = {
@@ -192,4 +227,5 @@ module.exports = {
   confirmEnrollment,
   verifyMfa,
   changePassword,
+  issueSessionToken,
 };

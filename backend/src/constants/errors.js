@@ -49,6 +49,9 @@ const ERROR_CODES = Object.freeze({
   DASHBOARD_AUTHOR_FAILED: 'DASHBOARD_AUTHOR_FAILED',
   // Thrown with HTTP 429 when an Operator already has too many graph runs queued.
   DASHBOARD_BUSY: 'DASHBOARD_BUSY',
+  // Thrown with HTTP 403 by requireAuth while an admin- or CLI-reset user has
+  // not chosen a new password yet.
+  PASSWORD_CHANGE_REQUIRED: 'PASSWORD_CHANGE_REQUIRED',
 });
 
 const ERROR_MESSAGES = Object.freeze({
@@ -87,6 +90,7 @@ const ERROR_MESSAGES = Object.freeze({
     'A graph could not be built for that request. Try describing it differently.',
   [ERROR_CODES.DASHBOARD_BUSY]:
     'Too many graphs are refreshing at once. Wait a moment and try again.',
+  [ERROR_CODES.PASSWORD_CHANGE_REQUIRED]: 'You must set a new password before continuing.',
 });
 
 module.exports = { ERROR_CODES, ERROR_MESSAGES };
