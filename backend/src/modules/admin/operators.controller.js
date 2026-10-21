@@ -10,8 +10,10 @@ async function list(req, res, next) {
 
 async function create(req, res, next) {
   try {
-    const { username, password, organisationIds } = req.body;
-    res.status(201).json(await service.createOperator(username, password, organisationIds));
+    const { username, password, organisationIds, email } = req.body;
+    res
+      .status(201)
+      .json(await service.createOperator(username, password, organisationIds, email));
   } catch (err) {
     next(err);
   }

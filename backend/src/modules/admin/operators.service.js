@@ -6,12 +6,14 @@ const { ERROR_CODES } = require('../../constants/errors');
 const { AUDIT_ACTIONS, AUDIT_OUTCOMES } = require('../../constants/auditActions');
 const { clearMfa, mfaEnrolled } = require('./mfa');
 const { issueTemporaryPassword } = require('../auth/passwords');
+const { assertEmailAvailable } = require('./userEmail');
 
 const BCRYPT_COST = 12;
 
 const OPERATOR_SELECT = {
   id: true,
   username: true,
+  email: true,
   isActive: true,
   createdAt: true,
   totpSecretEncrypted: true,
@@ -24,6 +26,7 @@ function serialize(user) {
   return {
     id: user.id,
     username: user.username,
+    email: user.email,
     isActive: user.isActive,
     mfaEnrolled: mfaEnrolled(user),
     createdAt: user.createdAt,
@@ -40,17 +43,19 @@ async function listOperators() {
   return users.map(serialize);
 }
 
-async function createOperator(username, password, organisationIds = []) {
+async function createOperator(username, password, organisationIds = [], email) {
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
     throw new AppError(409, ERROR_CODES.VALIDATION_ERROR, 'That username is already taken.');
   }
+  await assertEmailAvailable(email);
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
   const user = await prisma.user.create({
     data: {
       username,
       passwordHash,
+      email,
       role: ROLES.OPERATOR,
       organisations: { create: organisationIds.map((organisationId) => ({ organisationId })) },
     },
@@ -67,8 +72,9 @@ async function findOperatorOrThrow(userId) {
   return user;
 }
 
-async function updateOperator(userId, { organisationIds, isActive }) {
+async function updateOperator(userId, { organisationIds, isActive, email }) {
   await findOperatorOrThrow(userId);
+  await assertEmailAvailable(email, userId);
 
   if (organisationIds !== undefined) {
     await prisma.userOrganisation.deleteMany({ where: { userId } });
@@ -79,9 +85,13 @@ async function updateOperator(userId, { organisationIds, isActive }) {
     }
   }
 
+  const data = {};
+  if (isActive !== undefined) data.isActive = isActive;
+  if (email !== undefined) data.email = email;
+
   const updated = await prisma.user.update({
     where: { id: userId },
-    data: isActive !== undefined ? { isActive } : {},
+    data,
     select: OPERATOR_SELECT,
   });
   return serialize(updated);

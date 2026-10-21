@@ -7,12 +7,14 @@ const { ERROR_CODES } = require('../../constants/errors');
 const { AUDIT_ACTIONS, AUDIT_OUTCOMES } = require('../../constants/auditActions');
 const { clearMfa, mfaEnrolled } = require('./mfa');
 const { issueTemporaryPassword } = require('../auth/passwords');
+const { assertEmailAvailable } = require('./userEmail');
 
 const BCRYPT_COST = 12;
 
 const ADMIN_SELECT = {
   id: true,
   username: true,
+  email: true,
   isActive: true,
   createdAt: true,
   totpSecretEncrypted: true,
@@ -35,15 +37,40 @@ async function listAdministrators() {
   return admins.map(serialize);
 }
 
-async function createAdministrator(username, password) {
+async function createAdministrator(username, password, email) {
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
     throw new AppError(409, ERROR_CODES.VALIDATION_ERROR, 'That username is already taken.');
   }
+  await assertEmailAvailable(email);
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
   const admin = await prisma.user.create({
-    data: { username, passwordHash, role: ROLES.ADMIN },
+    data: { username, passwordHash, email, role: ROLES.ADMIN },
+    select: ADMIN_SELECT,
+  });
+  return serialize(admin);
+}
+
+// Only the master admin edits an Administrator's email (their own included):
+// it decides where that account's password reset links go.
+async function updateAdministrator(actor, userId, { email }) {
+  if (actor.username !== MASTER_ADMIN_USERNAME) {
+    throw new AppError(
+      403,
+      ERROR_CODES.FORBIDDEN,
+      "Only the master admin can change an administrator's email.",
+    );
+  }
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.role !== ROLES.ADMIN) {
+    throw new AppError(404, ERROR_CODES.NOT_FOUND);
+  }
+  await assertEmailAvailable(email, userId);
+
+  const admin = await prisma.user.update({
+    where: { id: userId },
+    data: { email },
     select: ADMIN_SELECT,
   });
   return serialize(admin);
@@ -115,6 +142,7 @@ async function resetAdministratorPassword(actor, userId) {
 module.exports = {
   listAdministrators,
   createAdministrator,
+  updateAdministrator,
   deleteAdministrator,
   resetAdministratorMfa,
   resetAdministratorPassword,

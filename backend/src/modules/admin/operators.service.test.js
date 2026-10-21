@@ -167,3 +167,69 @@ test('resetOperatorPassword: 404 for a non-Operator', async () => {
     restore();
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* Email addresses                                                            */
+/* -------------------------------------------------------------------------- */
+
+const { createOperatorSchema } = require('./operators.schemas');
+
+test('createOperatorSchema: lowercases and trims email', () => {
+  const parsed = createOperatorSchema.parse({
+    username: 'abc',
+    password: '12345678',
+    email: '  Ann@Example.COM ',
+  });
+  assert.equal(parsed.email, 'ann@example.com');
+});
+
+// findUnique answers by id with the Operator, by email with `emailOwner`.
+function mockEmailUpdate({ emailOwner = null } = {}) {
+  const updates = [];
+  const originalUpdate = prisma.user.update;
+  prisma.user.findUnique = async ({ where }) =>
+    where.id ? { id: USER_ID, role: ROLES.OPERATOR } : emailOwner;
+  prisma.user.update = async (args) => {
+    updates.push(args);
+    return {
+      id: USER_ID,
+      username: 'op',
+      isActive: true,
+      createdAt: new Date(0),
+      totpSecretEncrypted: null,
+      email: args.data.email ?? null,
+      organisations: [],
+    };
+  };
+  return {
+    updates,
+    restore: () => {
+      prisma.user.update = originalUpdate;
+      restoreAll();
+    },
+  };
+}
+
+test('updateOperator: 409 when the email belongs to someone else', async () => {
+  const { updates, restore } = mockEmailUpdate({ emailOwner: { id: 'someone-else' } });
+  try {
+    await assert.rejects(service.updateOperator(USER_ID, { email: 'taken@example.com' }), {
+      status: 409,
+      message: 'That email is already in use.',
+    });
+    assert.deepEqual(updates, []);
+  } finally {
+    restore();
+  }
+});
+
+test('updateOperator: null clears the email', async () => {
+  const { updates, restore } = mockEmailUpdate();
+  try {
+    const result = await service.updateOperator(USER_ID, { email: null });
+    assert.equal(updates[0].data.email, null);
+    assert.equal(result.email, null);
+  } finally {
+    restore();
+  }
+});

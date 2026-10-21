@@ -177,3 +177,46 @@ test('resetAdministratorPassword: 404 for an Operator id', async () => {
     restoreAll();
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* updateAdministrator                                                        */
+/* -------------------------------------------------------------------------- */
+
+test('updateAdministrator: 403 for a non-master actor', async () => {
+  const updates = mockTarget();
+  try {
+    await assert.rejects(
+      service.updateAdministrator(OTHER_ADMIN, 'admin-3', { email: 'x@example.com' }),
+      { status: 403 },
+    );
+    assert.deepEqual(updates, []);
+  } finally {
+    restoreAll();
+  }
+});
+
+test('updateAdministrator: master admin sets an email', async () => {
+  const updates = [];
+  prisma.user.findUnique = async ({ where }) =>
+    where.id ? { id: where.id, role: ROLES.ADMIN } : null;
+  prisma.user.update = async (args) => {
+    updates.push(args);
+    return {
+      id: OTHER_ADMIN.id,
+      username: OTHER_ADMIN.username,
+      isActive: true,
+      createdAt: new Date(0),
+      totpSecretEncrypted: null,
+      email: args.data.email,
+    };
+  };
+  try {
+    const result = await service.updateAdministrator(MASTER, OTHER_ADMIN.id, {
+      email: 'second@example.com',
+    });
+    assert.equal(updates[0].data.email, 'second@example.com');
+    assert.equal(result.email, 'second@example.com');
+  } finally {
+    restoreAll();
+  }
+});
