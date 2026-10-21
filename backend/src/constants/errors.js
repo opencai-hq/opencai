@@ -52,6 +52,8 @@ const ERROR_CODES = Object.freeze({
   // Thrown with HTTP 403 by requireAuth while an admin- or CLI-reset user has
   // not chosen a new password yet.
   PASSWORD_CHANGE_REQUIRED: 'PASSWORD_CHANGE_REQUIRED',
+  // Thrown with HTTP 429 by middleware/rateLimit on the sign-in and reset routes.
+  RATE_LIMITED: 'RATE_LIMITED',
 });
 
 const ERROR_MESSAGES = Object.freeze({
@@ -91,6 +93,7 @@ const ERROR_MESSAGES = Object.freeze({
   [ERROR_CODES.DASHBOARD_BUSY]:
     'Too many graphs are refreshing at once. Wait a moment and try again.',
   [ERROR_CODES.PASSWORD_CHANGE_REQUIRED]: 'You must set a new password before continuing.',
+  [ERROR_CODES.RATE_LIMITED]: 'Too many attempts. Wait a few minutes and try again.',
 });
 
 module.exports = { ERROR_CODES, ERROR_MESSAGES };
