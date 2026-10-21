@@ -23,29 +23,19 @@ async function isAvailable() {
   return Boolean(await mailSettingsService.getActiveMailSettings());
 }
 
-// Mail goes out without being awaited, so a request for a real account takes
-// no longer to answer than one for an unknown name -- and an SMTP failure is
-// logged, never surfaced to the requester.
+// The "password changed" notice goes out without being awaited; an SMTP
+// failure is logged and never undoes the reset.
 function sendInBackground(message) {
   mailer.sendMail(message).catch((err) => {
     console.error('[password-reset] mail failed:', err.message);
   });
 }
 
-/** Never reveals whether the account exists: resolves the same way either way. */
-async function requestReset(identifier) {
-  const mail = await mailSettingsService.getActiveMailSettings();
-  if (!mail) return;
-
-  const trimmed = identifier.trim();
-  const where = trimmed.includes('@') ? { email: trimmed.toLowerCase() } : { username: trimmed };
-  const user = await prisma.user.findUnique({ where });
-  if (!user || !user.isActive || !user.email) return;
-
+// Stores a fresh link (replacing any the user asked for earlier) and mails it.
+async function issueResetLink(user, mail) {
   const token = crypto.randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60 * 1000);
 
-  // A new link replaces any the user asked for earlier.
   await prisma.$transaction([
     prisma.passwordResetToken.deleteMany({ where: { userId: user.id, usedAt: null } }),
     prisma.passwordResetToken.create({
@@ -60,13 +50,33 @@ async function requestReset(identifier) {
     },
   });
 
-  sendInBackground({
+  await mailer.sendMail({
     to: user.email,
     ...passwordResetEmail({
       username: user.username,
       link: buildResetLink(mail.publicAppUrl, token),
       expiresMinutes: RESET_TOKEN_TTL_MINUTES,
     }),
+  });
+}
+
+/**
+ * Never reveals whether the account exists: a real account and an unknown
+ * name both answer straight after the lookup -- the link is issued and mailed
+ * afterwards, so neither the response nor its timing differs. Failures there
+ * are logged, never surfaced to the requester.
+ */
+async function requestReset(identifier) {
+  const mail = await mailSettingsService.getActiveMailSettings();
+  if (!mail) return;
+
+  const trimmed = identifier.trim();
+  const where = trimmed.includes('@') ? { email: trimmed.toLowerCase() } : { username: trimmed };
+  const user = await prisma.user.findUnique({ where });
+  if (!user || !user.isActive || !user.email) return;
+
+  issueResetLink(user, mail).catch((err) => {
+    console.error('[password-reset] could not issue a reset link:', err.message);
   });
 }
 

@@ -79,6 +79,9 @@ function mockRequest({ user = USER, mail = MAIL, sendMail } = {}) {
   return { calls, mails };
 }
 
+// Issuing the link runs after requestReset has answered; let it finish.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
 const tokenFromLink = (text) => /reset-password\?token=([A-Za-z0-9_-]+)/.exec(text)[1];
 
 /* -------------------------------------------------------------------------- */
@@ -89,6 +92,7 @@ test('requestReset: matches email case-insensitively and trims', async () => {
   const { calls, mails } = mockRequest();
   try {
     await service.requestReset('  Ann@Example.com ');
+    await settle();
     assert.deepEqual(calls[0], ['user.findUnique', { where: { email: 'ann@example.com' } }]);
     assert.equal(mails.length, 1);
     assert.equal(mails[0].to, 'ann@example.com');
@@ -142,6 +146,7 @@ test('requestReset: deletes earlier unused tokens before creating a new one', as
   const { calls, mails } = mockRequest();
   try {
     await service.requestReset('ann');
+    await settle();
     const names = calls.map(([name]) => name);
     assert.ok(names.indexOf('token.deleteMany') < names.indexOf('token.create'));
     const [, deleteArgs] = calls.find(([name]) => name === 'token.deleteMany');
@@ -172,11 +177,27 @@ test('requestReset: resolves even when sending fails', async () => {
   mockRequest({ sendMail: () => Promise.reject(new Error('SMTP down')) });
   try {
     await service.requestReset('ann');
-    await new Promise(setImmediate);
+    await settle();
     assert.equal(unhandled, null);
   } finally {
     process.removeListener('unhandledRejection', onUnhandled);
     console.error = originalConsoleError;
+    restoreAll();
+  }
+});
+
+test('requestReset: answers before the link is issued, so timing does not reveal the account', async () => {
+  mockRequest();
+  // The database writes for a real account never finish here...
+  prisma.$transaction = () => new Promise(() => {});
+  try {
+    // ...yet the request still answers straight after the lookup, as for an unknown name.
+    const answered = await Promise.race([
+      service.requestReset('ann').then(() => true),
+      new Promise((resolve) => setTimeout(() => resolve(false), 200)),
+    ]);
+    assert.equal(answered, true);
+  } finally {
     restoreAll();
   }
 });

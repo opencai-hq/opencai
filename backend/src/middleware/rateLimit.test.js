@@ -30,3 +30,27 @@ test('loginLimiter: the 21st sign-in attempt in the window is refused', async ()
     server.close();
   }
 });
+
+test('loginLimiter: one account hitting the limit does not lock out others behind the same IP', async () => {
+  // Behind a reverse proxy or Docker's NAT every user shares one IP.
+  const server = app.listen(0);
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/api/auth/login`;
+    const attempt = (username) =>
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }), // no password: 400 before the database
+      });
+
+    for (let i = 0; i < 20; i += 1) {
+      assert.equal((await attempt('guessed-account')).status, 400);
+    }
+    assert.equal((await attempt('guessed-account')).status, 429);
+    assert.equal((await attempt('Someone-Else')).status, 400);
+    // Usernames differing only in case or spacing count as the same account.
+    assert.equal((await attempt(' GUESSED-account ')).status, 429);
+  } finally {
+    server.close();
+  }
+});
