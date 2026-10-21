@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { decodeJwtPayload, isTokenExpired } from './jwt';
+import { SESSION_EXPIRED_EVENT } from './api';
 import { WORKSPACE_STORAGE_KEY } from './WorkspaceContext';
 
 const TOKEN_STORAGE_KEY = 'opencai_token';
@@ -32,6 +33,11 @@ export function AuthProvider({ children }) {
     localStorage.removeItem(WORKSPACE_STORAGE_KEY);
     setToken(null);
   };
+
+  useEffect(() => {
+    window.addEventListener(SESSION_EXPIRED_EVENT, logout);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, logout);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ token, user, login, logout }}>{children}</AuthContext.Provider>

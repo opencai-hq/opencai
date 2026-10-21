@@ -17,6 +17,7 @@ export function MfaEnrollPage() {
   const [submitting, setSubmitting] = useState(false);
   const [backupCodes, setBackupCodes] = useState(null);
   const [sessionToken, setSessionToken] = useState(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   useEffect(() => {
     if (!mfaToken) return;
@@ -34,11 +35,13 @@ export function MfaEnrollPage() {
     setCodeError('');
     setSubmitting(true);
     try {
-      const { token, backupCodes: codes } = await confirmEnrollment(
-        enrollment.enrollmentToken,
-        code,
-      );
+      const {
+        token,
+        backupCodes: codes,
+        mustChangePassword: mustChange,
+      } = await confirmEnrollment(enrollment.enrollmentToken, code);
       setSessionToken(token);
+      setMustChangePassword(Boolean(mustChange));
       setBackupCodes(codes);
     } catch (err) {
       setCodeError(err.message);
@@ -49,7 +52,7 @@ export function MfaEnrollPage() {
 
   function handleContinue() {
     storeSession(sessionToken);
-    navigate('/dashboard', { replace: true });
+    navigate(mustChangePassword ? '/change-password' : '/dashboard', { replace: true });
   }
 
   if (backupCodes) {

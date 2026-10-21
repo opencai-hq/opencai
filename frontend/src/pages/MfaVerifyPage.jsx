@@ -23,9 +23,9 @@ export function MfaVerifyPage() {
     setError('');
     setSubmitting(true);
     try {
-      const { token } = await verifyMfa(mfaToken, code);
+      const { token, mustChangePassword } = await verifyMfa(mfaToken, code);
       storeSession(token);
-      navigate('/dashboard', { replace: true });
+      navigate(mustChangePassword ? '/change-password' : '/dashboard', { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {

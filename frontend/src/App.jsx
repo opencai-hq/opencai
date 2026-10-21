@@ -5,9 +5,11 @@ import { WorkspaceProvider } from './lib/WorkspaceContext';
 import { ToastProvider } from './lib/ToastContext';
 import { BrandingFavicon } from './lib/useBranding';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { SessionEvents } from './components/SessionEvents';
 import { LoginPage } from './pages/LoginPage';
 import { MfaVerifyPage } from './pages/MfaVerifyPage';
 import { MfaEnrollPage } from './pages/MfaEnrollPage';
+import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { ManageAdministrators } from './pages/admin/ManageAdministrators';
@@ -36,10 +38,12 @@ function App() {
         <AuthProvider>
           <WorkspaceProvider>
             <BrowserRouter>
+              <SessionEvents />
               <Routes>
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/mfa/verify" element={<MfaVerifyPage />} />
                 <Route path="/mfa/enroll" element={<MfaEnrollPage />} />
+                <Route path="/change-password" element={<ChangePasswordPage />} />
                 <Route
                   path="/dashboard"
                   element={
