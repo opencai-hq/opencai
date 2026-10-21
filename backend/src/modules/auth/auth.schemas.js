@@ -24,10 +24,21 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(8),
 });
 
+const requestPasswordResetSchema = z.object({
+  identifier: z.string().trim().min(1).max(254), // username or email
+});
+
+const confirmPasswordResetSchema = z.object({
+  token: z.string().min(1),
+  newPassword: z.string().min(8),
+});
+
 module.exports = {
   loginSchema,
   mfaTokenSchema,
   confirmEnrollmentSchema,
   verifyMfaSchema,
   changePasswordSchema,
+  requestPasswordResetSchema,
+  confirmPasswordResetSchema,
 };

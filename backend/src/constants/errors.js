@@ -59,6 +59,8 @@ const ERROR_CODES = Object.freeze({
   MAIL_NOT_CONFIGURED: 'MAIL_NOT_CONFIGURED',
   // Thrown with HTTP 502 when the SMTP server refuses or cannot be reached.
   MAIL_SEND_FAILED: 'MAIL_SEND_FAILED',
+  // Thrown with HTTP 400 for an unknown, used or expired reset link.
+  PASSWORD_RESET_TOKEN_INVALID: 'PASSWORD_RESET_TOKEN_INVALID',
 });
 
 const ERROR_MESSAGES = Object.freeze({
@@ -102,6 +104,8 @@ const ERROR_MESSAGES = Object.freeze({
   [ERROR_CODES.MAIL_NOT_CONFIGURED]:
     'Email is not set up. The master admin needs to configure it in Manage Email.',
   [ERROR_CODES.MAIL_SEND_FAILED]: 'The email could not be sent.',
+  [ERROR_CODES.PASSWORD_RESET_TOKEN_INVALID]:
+    'This reset link is invalid or has expired. Request a new one.',
 });
 
 module.exports = { ERROR_CODES, ERROR_MESSAGES };

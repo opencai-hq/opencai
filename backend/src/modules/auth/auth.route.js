@@ -1,7 +1,12 @@
 const express = require('express');
 const { validate } = require('../../middleware/validate');
 const { requireAuthAllowingPasswordChange } = require('../../middleware/auth');
-const { loginLimiter, mfaLimiter } = require('../../middleware/rateLimit');
+const {
+  loginLimiter,
+  mfaLimiter,
+  resetRequestLimiter,
+  resetConfirmLimiter,
+} = require('../../middleware/rateLimit');
 const controller = require('./auth.controller');
 const {
   loginSchema,
@@ -9,6 +14,8 @@ const {
   confirmEnrollmentSchema,
   verifyMfaSchema,
   changePasswordSchema,
+  requestPasswordResetSchema,
+  confirmPasswordResetSchema,
 } = require('./auth.schemas');
 
 const router = express.Router();
@@ -22,6 +29,20 @@ router.post(
   requireAuthAllowingPasswordChange,
   validate(changePasswordSchema),
   controller.changePassword,
+);
+
+router.get('/password-reset/available', controller.passwordResetAvailable);
+router.post(
+  '/password-reset/request',
+  resetRequestLimiter,
+  validate(requestPasswordResetSchema),
+  controller.requestPasswordReset,
+);
+router.post(
+  '/password-reset/confirm',
+  resetConfirmLimiter,
+  validate(confirmPasswordResetSchema),
+  controller.confirmPasswordReset,
 );
 
 module.exports = router;
