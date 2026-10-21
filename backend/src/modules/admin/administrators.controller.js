@@ -35,4 +35,12 @@ async function resetMfa(req, res, next) {
   }
 }
 
-module.exports = { list, create, remove, resetMfa };
+async function resetPassword(req, res, next) {
+  try {
+    res.json(await service.resetAdministratorPassword(req.user, req.params.id));
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { list, create, remove, resetMfa, resetPassword };

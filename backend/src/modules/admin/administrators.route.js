@@ -9,5 +9,6 @@ router.get('/', controller.list);
 router.post('/', validate(createAdministratorSchema), controller.create);
 router.delete('/:id', controller.remove);
 router.post('/:id/reset-mfa', controller.resetMfa);
+router.post('/:id/reset-password', controller.resetPassword);
 
 module.exports = router;

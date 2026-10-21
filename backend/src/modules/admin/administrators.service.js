@@ -4,7 +4,9 @@ const { ROLES } = require('../../constants/roles');
 const { MASTER_ADMIN_USERNAME } = require('../../constants/admin');
 const { AppError } = require('../../middleware/errorHandler');
 const { ERROR_CODES } = require('../../constants/errors');
+const { AUDIT_ACTIONS, AUDIT_OUTCOMES } = require('../../constants/auditActions');
 const { clearMfa, mfaEnrolled } = require('./mfa');
+const { issueTemporaryPassword } = require('../auth/passwords');
 
 const BCRYPT_COST = 12;
 
@@ -75,9 +77,45 @@ async function resetAdministratorMfa(actor, userId) {
   await clearMfa(userId);
 }
 
+// Only the master admin may reset an Administrator's password, and never their
+// own here (they know it: Change Password). A forgotten master admin password
+// is reset from the server with `npm run reset-password`.
+async function resetAdministratorPassword(actor, userId) {
+  if (actor.username !== MASTER_ADMIN_USERNAME) {
+    throw new AppError(
+      403,
+      ERROR_CODES.FORBIDDEN,
+      "Only the master admin can reset an administrator's password.",
+    );
+  }
+  if (actor.id === userId) {
+    throw new AppError(
+      400,
+      ERROR_CODES.VALIDATION_ERROR,
+      'Use Change Password for your own account.',
+    );
+  }
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.role !== ROLES.ADMIN) {
+    throw new AppError(404, ERROR_CODES.NOT_FOUND);
+  }
+
+  const temporaryPassword = await issueTemporaryPassword(userId);
+  await prisma.auditLog.create({
+    data: {
+      actorUserId: actor.id,
+      action: AUDIT_ACTIONS.PASSWORD_RESET_BY_ADMIN,
+      outcome: AUDIT_OUTCOMES.SUCCESS,
+      metadata: { targetUserId: userId },
+    },
+  });
+  return { temporaryPassword };
+}
+
 module.exports = {
   listAdministrators,
   createAdministrator,
   deleteAdministrator,
   resetAdministratorMfa,
+  resetAdministratorPassword,
 };

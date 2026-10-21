@@ -110,3 +110,70 @@ test('listAdministrators: reports mfaEnrolled and never returns the secret', asy
     restoreAll();
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* resetAdministratorPassword                                                 */
+/* -------------------------------------------------------------------------- */
+
+function mockPasswordReset(role = ROLES.ADMIN) {
+  const updates = mockTarget(role);
+  const audits = [];
+  const originalAudit = prisma.auditLog.create;
+  prisma.auditLog.create = async (args) => {
+    audits.push(args.data);
+  };
+  return { updates, audits, restore: () => (prisma.auditLog.create = originalAudit) };
+}
+
+test('resetAdministratorPassword: master admin resets another admin', async () => {
+  const { updates, audits, restore } = mockPasswordReset();
+  try {
+    const { temporaryPassword } = await service.resetAdministratorPassword(MASTER, OTHER_ADMIN.id);
+    assert.match(temporaryPassword, /^[A-Za-z0-9_-]{16}$/);
+    assert.equal(updates[0].data.mustChangePassword, true);
+    assert.equal(audits[0].action, 'PASSWORD_RESET_BY_ADMIN');
+    assert.equal(audits[0].actorUserId, MASTER.id);
+    assert.deepEqual(audits[0].metadata, { targetUserId: OTHER_ADMIN.id });
+  } finally {
+    restore();
+    restoreAll();
+  }
+});
+
+test('resetAdministratorPassword: 403 for a non-master actor', async () => {
+  const { updates, restore } = mockPasswordReset();
+  try {
+    await assert.rejects(service.resetAdministratorPassword(OTHER_ADMIN, 'admin-3'), {
+      status: 403,
+    });
+    assert.deepEqual(updates, []);
+  } finally {
+    restore();
+    restoreAll();
+  }
+});
+
+test('resetAdministratorPassword: 400 for own account', async () => {
+  const { updates, restore } = mockPasswordReset();
+  try {
+    await assert.rejects(service.resetAdministratorPassword(MASTER, MASTER.id), {
+      status: 400,
+      message: 'Use Change Password for your own account.',
+    });
+    assert.deepEqual(updates, []);
+  } finally {
+    restore();
+    restoreAll();
+  }
+});
+
+test('resetAdministratorPassword: 404 for an Operator id', async () => {
+  const { updates, restore } = mockPasswordReset(ROLES.OPERATOR);
+  try {
+    await assert.rejects(service.resetAdministratorPassword(MASTER, 'op-1'), { status: 404 });
+    assert.deepEqual(updates, []);
+  } finally {
+    restore();
+    restoreAll();
+  }
+});

@@ -113,3 +113,57 @@ test('resetOperatorMfa: 404 for a user who is not an Operator', async () => {
     restoreAll();
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* resetOperatorPassword                                                      */
+/* -------------------------------------------------------------------------- */
+
+const ADMIN_ACTOR = { id: 'admin-1', username: 'some-admin' };
+
+function mockPasswordReset({ role = ROLES.OPERATOR } = {}) {
+  const updates = [];
+  const audits = [];
+  const originalUpdate = prisma.user.update;
+  const originalAudit = prisma.auditLog.create;
+  prisma.user.findUnique = async () => ({ id: USER_ID, role });
+  prisma.user.update = async (args) => {
+    updates.push(args);
+  };
+  prisma.auditLog.create = async (args) => {
+    audits.push(args.data);
+  };
+  return {
+    updates,
+    audits,
+    restore: () => {
+      prisma.user.update = originalUpdate;
+      prisma.auditLog.create = originalAudit;
+      restoreAll();
+    },
+  };
+}
+
+test('resetOperatorPassword: returns a temporary password and audits', async () => {
+  const { updates, audits, restore } = mockPasswordReset();
+  try {
+    const { temporaryPassword } = await service.resetOperatorPassword(ADMIN_ACTOR, USER_ID);
+    assert.equal(temporaryPassword.length, 16);
+    assert.equal(updates[0].data.mustChangePassword, true);
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0].action, 'PASSWORD_RESET_BY_ADMIN');
+    assert.equal(audits[0].actorUserId, ADMIN_ACTOR.id);
+    assert.equal(audits[0].metadata.targetUserId, USER_ID);
+  } finally {
+    restore();
+  }
+});
+
+test('resetOperatorPassword: 404 for a non-Operator', async () => {
+  const { updates, restore } = mockPasswordReset({ role: ROLES.ADMIN });
+  try {
+    await assert.rejects(service.resetOperatorPassword(ADMIN_ACTOR, USER_ID), { status: 404 });
+    assert.deepEqual(updates, []);
+  } finally {
+    restore();
+  }
+});

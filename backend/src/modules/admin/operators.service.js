@@ -3,7 +3,9 @@ const prisma = require('../../config/db');
 const { ROLES } = require('../../constants/roles');
 const { AppError } = require('../../middleware/errorHandler');
 const { ERROR_CODES } = require('../../constants/errors');
+const { AUDIT_ACTIONS, AUDIT_OUTCOMES } = require('../../constants/auditActions');
 const { clearMfa, mfaEnrolled } = require('./mfa');
+const { issueTemporaryPassword } = require('../auth/passwords');
 
 const BCRYPT_COST = 12;
 
@@ -120,6 +122,22 @@ async function resetOperatorMfa(userId) {
   await clearMfa(userId);
 }
 
+// The Operator signs in with the temporary password (MFA still applies) and
+// must choose a new one before anything else works. Signs them out everywhere.
+async function resetOperatorPassword(actor, userId) {
+  await findOperatorOrThrow(userId);
+  const temporaryPassword = await issueTemporaryPassword(userId);
+  await prisma.auditLog.create({
+    data: {
+      actorUserId: actor.id,
+      action: AUDIT_ACTIONS.PASSWORD_RESET_BY_ADMIN,
+      outcome: AUDIT_OUTCOMES.SUCCESS,
+      metadata: { targetUserId: userId },
+    },
+  });
+  return { temporaryPassword };
+}
+
 module.exports = {
   listOperators,
   createOperator,
@@ -127,4 +145,5 @@ module.exports = {
   deactivateOperator,
   deleteOperator,
   resetOperatorMfa,
+  resetOperatorPassword,
 };

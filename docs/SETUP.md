@@ -162,6 +162,23 @@ API key in Manage Chat Settings, add an Organisation with a Workspace and its cl
 [Cloud credentials](#cloud-credentials)), and
 create an Operator.
 
+## Account recovery
+
+An Administrator resets a forgotten password from Manage Operators, and the master admin does the
+same for Administrators in Manage Administrators. The page shows a temporary password once; the user
+signs in with it, still enters their MFA code, and must choose a new password before going on. A
+reset signs the user out everywhere.
+
+The master admin resets their own password from the server:
+
+```sh
+docker compose exec backend npm run reset-password -- admin   # Docker Compose
+cd backend && npm run reset-password -- admin                 # dev.sh
+```
+
+It prints a temporary password. Add `--reset-mfa` if the authenticator is lost too; the user then
+sets MFA up again at sign-in. The same command works for any username.
+
 ## Your own database or bucket
 
 Both run modes work with any Postgres and any S3-compatible store (AWS S3, MinIO, on-premises
