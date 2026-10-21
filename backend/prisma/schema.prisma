@@ -66,13 +66,22 @@ model User {
   totpSecretEncrypted String?
   // Hashed one-time recovery codes; a code is removed from this list once redeemed.
   backupCodesHashed   String[] @default([])
+  // Bumped by every password change or reset; session JWTs carry it as `sv`
+  // and are rejected once it no longer matches.
+  sessionVersion      Int      @default(0)
+  // Set by an admin or CLI reset: the user must choose a new password before
+  // anything else works.
+  mustChangePassword  Boolean  @default(false)
+  // Set by administrators; where password reset links are sent. Lowercased.
+  email               String?  @unique
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  organisations    UserOrganisation[]
-  chatSessions     ChatSession[]
-  auditLogs        AuditLog[]
-  dashboardWidgets DashboardWidget[]
+  organisations       UserOrganisation[]
+  chatSessions        ChatSession[]
+  auditLogs           AuditLog[]
+  dashboardWidgets    DashboardWidget[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
 }
@@ -291,4 +300,43 @@ model DashboardWidget {
 
   @@index([userId, workspaceId, mode])
   @@map("dashboard_widgets")
+}
+
+// One emailed password reset link. Only the SHA-256 hash of the token is stored.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+enum MailSecurity {
+  NONE
+  STARTTLS
+  TLS
+}
+
+// Outgoing SMTP mail for password reset links. Singleton row, enforced at the service layer.
+model MailSettings {
+  id                String       @id @default(cuid())
+  enabled           Boolean      @default(false)
+  host              String?
+  port              Int?
+  security          MailSecurity @default(STARTTLS)
+  username          String?
+  passwordEncrypted String?
+  fromAddress       String?
+  fromName          String?
+  // Browser-facing base URL of the web app; reset links point here.
+  publicAppUrl      String?
+  updatedAt         DateTime     @updatedAt
+
+  @@map("mail_settings")
 }
