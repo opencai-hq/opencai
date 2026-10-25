@@ -3,7 +3,6 @@ import { useAuth } from '../../lib/AuthContext';
 import { getMailSettings, sendTestEmail, updateMailSettings } from '../../lib/adminApi';
 import { useToast } from '../../lib/ToastContext';
 import { Field } from '../../components/Dialog';
-import { AdminLayout } from './AdminLayout';
 
 const SECURITY_OPTIONS = [
   { value: 'NONE', label: 'None' },
@@ -49,7 +48,9 @@ function bodyFromForm(form) {
   return body;
 }
 
-export function ManageEmail() {
+// The Email section of Manage Branding. Only the master admin may see or
+// change it; anyone else gets a short note instead of the form.
+export function EmailSettings() {
   const { token } = useAuth();
   const toast = useToast();
   const [form, setForm] = useState(null);
@@ -106,9 +107,8 @@ export function ManageEmail() {
   }
 
   return (
-    <AdminLayout title="Manage Email">
-      <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50">Manage Email</h1>
-      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+    <>
+      <p className="mt-6 text-sm text-gray-500 dark:text-gray-400">
         Outgoing mail over SMTP, used to send password reset links. While it is off, people who
         forget their password are told to contact an administrator.
       </p>
@@ -239,6 +239,6 @@ export function ManageEmail() {
           </form>
         </>
       )}
-    </AdminLayout>
+    </>
   );
 }

@@ -55,7 +55,7 @@ const ERROR_CODES = Object.freeze({
   // Thrown with HTTP 429 by middleware/rateLimit on the sign-in and reset routes.
   RATE_LIMITED: 'RATE_LIMITED',
   // Thrown with HTTP 409 when an email would be sent but outgoing mail is not
-  // set up (or is switched off) in Manage Email.
+  // set up (or is switched off) in Manage Branding > Email.
   MAIL_NOT_CONFIGURED: 'MAIL_NOT_CONFIGURED',
   // Thrown with HTTP 502 when the SMTP server refuses or cannot be reached.
   MAIL_SEND_FAILED: 'MAIL_SEND_FAILED',
@@ -102,7 +102,7 @@ const ERROR_MESSAGES = Object.freeze({
   [ERROR_CODES.PASSWORD_CHANGE_REQUIRED]: 'You must set a new password before continuing.',
   [ERROR_CODES.RATE_LIMITED]: 'Too many attempts. Wait a few minutes and try again.',
   [ERROR_CODES.MAIL_NOT_CONFIGURED]:
-    'Email is not set up. The master admin needs to configure it in Manage Email.',
+    'Email is not set up. The master admin needs to configure it in Manage Branding > Email.',
   [ERROR_CODES.MAIL_SEND_FAILED]: 'The email could not be sent.',
   [ERROR_CODES.PASSWORD_RESET_TOKEN_INVALID]:
     'This reset link is invalid or has expired. Request a new one.',

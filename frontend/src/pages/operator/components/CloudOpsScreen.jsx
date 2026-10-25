@@ -27,7 +27,7 @@ export function CloudOpsScreen({ workspace, onEditWorkspace, messages, onSend, o
         </div>
       )}
 
-      <div className={`mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 ${started ? '' : 'mt-6'}`}>
+      <div className={`mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 ${started ? '' : 'mt-6'}`}>
         {!started && <WorkspaceSummaryCard workspace={workspace} onEdit={onEditWorkspace} />}
         <ChatPanel
           messages={messages}

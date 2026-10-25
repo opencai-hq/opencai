@@ -3,7 +3,14 @@ import { useAuth } from '../../lib/AuthContext';
 import { getBranding, updateBranding } from '../../lib/adminApi';
 import { applyFavicon } from '../../lib/useBranding';
 import { useToast } from '../../lib/ToastContext';
+import { SectionToggle } from '../../components/SectionToggle';
 import { AdminLayout } from './AdminLayout';
+import { EmailSettings } from './EmailSettings';
+
+const SECTIONS = [
+  { key: 'branding', label: 'Branding' },
+  { key: 'email', label: 'Email' },
+];
 
 export function ManageBranding() {
   const { token } = useAuth();
@@ -14,6 +21,7 @@ export function ManageBranding() {
   const [faviconFile, setFaviconFile] = useState(null);
   const toast = useToast();
   const [submitting, setSubmitting] = useState(false);
+  const [section, setSection] = useState('branding');
 
   function refresh() {
     getBranding()
@@ -49,11 +57,21 @@ export function ManageBranding() {
     <AdminLayout title="Manage Branding">
       <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50">Manage Branding</h1>
       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-        This instance's own white-label branding -- separate from any client Organisation.
+        This instance's own white-label branding -- separate from any client Organisation -- and the
+        email it sends.
       </p>
 
+      <SectionToggle
+        sections={SECTIONS}
+        value={section}
+        onChange={setSection}
+        label="Branding section"
+      />
+
+      {/* Both sections stay mounted so switching does not discard unsaved edits. */}
       <form
         onSubmit={handleSubmit}
+        hidden={section !== 'branding'}
         className="mt-6 max-w-lg space-y-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900"
       >
         <div>
@@ -128,6 +146,10 @@ export function ManageBranding() {
           Save
         </button>
       </form>
+
+      <div hidden={section !== 'email'}>
+        <EmailSettings />
+      </div>
     </AdminLayout>
   );
 }

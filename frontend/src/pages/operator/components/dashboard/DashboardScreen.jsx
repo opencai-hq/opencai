@@ -128,7 +128,7 @@ export function DashboardScreen({ workspace, mode }) {
 
   return (
     <div className="mx-auto w-full max-w-7xl pb-10">
-      <div className="mb-6 flex flex-wrap items-end gap-3 pr-28">
+      <div className="mb-6 flex flex-wrap items-start gap-3 pr-[86px]">
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
             {MODE_LABELS[mode]} dashboard

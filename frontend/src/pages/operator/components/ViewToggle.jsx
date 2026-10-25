@@ -11,7 +11,7 @@ export function ViewToggle({ view, onChange }) {
     <div
       role="group"
       aria-label="View"
-      className="flex gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-700 dark:bg-gray-900"
+      className="flex gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm dark:border-gray-700 dark:bg-gray-900"
     >
       {VIEWS.map(({ key, label, Icon }) => (
         <button
@@ -21,7 +21,7 @@ export function ViewToggle({ view, onChange }) {
           aria-pressed={view === key}
           aria-label={label}
           title={label}
-          className={`rounded-md p-2 transition ${
+          className={`rounded-md p-1.5 transition ${
             view === key
               ? 'bg-teal-600 text-white'
               : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'

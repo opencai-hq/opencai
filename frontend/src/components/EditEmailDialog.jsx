@@ -12,7 +12,7 @@ export function EditEmailDialog({ username, email, busy, onSubmit, onClose }) {
       onClose={onClose}
     >
       <Field
-        label="Email (leave empty to remove)"
+        label="Email (optional)"
         type="email"
         value={value}
         onChange={(e) => setValue(e.target.value)}

@@ -8,6 +8,7 @@ import {
   TrashIcon,
 } from '../../../../components/icons';
 import { PERIOD_LABELS, timeAgo } from '../../../../lib/chartData';
+import { CommandSteps, stepsText } from './CommandSteps';
 import { WidgetChart } from './WidgetChart';
 
 const selectClass =
@@ -44,12 +45,15 @@ export function WidgetCard({ widget, busy, onRefresh, onRedraw, onUpdate, onDele
 
   const { chartSpec: spec, lastResult: result, lastError: error } = widget;
   const hasPeriod = widget.period !== 'NONE';
+  const chained = (widget.steps?.length ?? 0) > 1;
   // Without a page the rows are already shown as a table.
   const canShowTable = Boolean(result) && Boolean(widget.chartHtml);
 
   async function copyCommand() {
     try {
-      await navigator.clipboard.writeText(widget.commandTemplate);
+      await navigator.clipboard.writeText(
+        chained ? stepsText(widget.steps) : widget.commandTemplate,
+      );
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -178,23 +182,37 @@ export function WidgetCard({ widget, busy, onRefresh, onRedraw, onUpdate, onDele
       {showCommand && (
         <div className="mt-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-950">
           <div className="flex items-start gap-2">
-            <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-gray-700 dark:text-gray-300">
-              {widget.commandTemplate}
-            </pre>
+            {chained ? (
+              <div className="min-w-0 flex-1">
+                <CommandSteps steps={widget.steps} />
+              </div>
+            ) : (
+              <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-gray-700 dark:text-gray-300">
+                {widget.commandTemplate}
+              </pre>
+            )}
             <button
               type="button"
               onClick={copyCommand}
-              aria-label="Copy command"
-              title={copied ? 'Copied' : 'Copy command'}
+              aria-label={chained ? 'Copy commands' : 'Copy command'}
+              title={copied ? 'Copied' : chained ? 'Copy commands' : 'Copy command'}
               className={iconButtonClass(copied)}
             >
               <CopyIcon className="size-3.5" />
             </button>
           </div>
-          {hasPeriod && (
+          {chained ? (
             <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
-              The dates in double braces are filled in from the period each time the graph runs.
+              Values in double braces are filled in each time the graph runs: {'{{item.…}}'} from
+              each row of the step before
+              {hasPeriod && ', and dates from the period'}.
             </p>
+          ) : (
+            hasPeriod && (
+              <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                The dates in double braces are filled in from the period each time the graph runs.
+              </p>
+            )
           )}
         </div>
       )}
@@ -209,6 +227,9 @@ export function WidgetCard({ widget, busy, onRefresh, onRedraw, onUpdate, onDele
           {result?.truncated &&
             !busy &&
             ' · Showing the largest values; the rest are grouped or left out.'}
+          {result?.skippedItems > 0 &&
+            !busy &&
+            ` · ${result.skippedItems} ${result.skippedItems === 1 ? 'row was' : 'rows were'} skipped because their command failed.`}
         </p>
         {result && !widget.chartHtml && !busy && (
           <p className="text-gray-500 dark:text-gray-400">

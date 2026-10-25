@@ -283,6 +283,10 @@ model DashboardWidget {
   query           String
   // CLI command; may contain {{start}} / {{end}} / {{end_inclusive}}.
   commandTemplate String
+  // A chain of commands, [{ command, rowsPath }], when one command is not
+  // enough (backend/src/ai/dashboard/chain.js); commandTemplate is then its
+  // first command. Null for a one-command graph.
+  steps           Json?
   // A DASHBOARD_PERIODS value (backend/src/constants/dashboard.js).
   period          String
   chartSpec       Json

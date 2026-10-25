@@ -25,6 +25,8 @@ function reset() {
   S.acquireErrors = [];
   S.released = [];
   S.allowedBinaries = ['aws', 'az', 'gcloud'];
+  // What a command prints once execResults runs out.
+  S.defaultStdout = '{}';
 }
 
 inject('../../config/db', {
@@ -41,7 +43,7 @@ inject('../sandbox/sandboxManager', {
   async executeInSandbox(containerId, argv, options) {
     S.execCalls.push({ containerId, argv, options });
     const next = S.execResults.shift() ?? {
-      stdout: '{}',
+      stdout: S.defaultStdout,
       stderr: '',
       exitCode: 0,
       timedOut: false,
@@ -316,4 +318,205 @@ test('a failed sign-in is reported as a credential problem and not retried', asy
 
   assert.match(result.error, /sign in to the cloud provider/);
   assert.equal(S.acquireCalls.length, 1);
+});
+
+// Chains: step 1 lists, every later step runs once per row of the one before.
+const LIST_STEP = {
+  command: 'aws ec2 describe-instances --output json',
+  rowsPath: 'Reservations[].Instances[].{id: InstanceId, name: Name}',
+};
+const CPU_STEP = {
+  command:
+    'aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name CPUUtilization --dimensions Name=InstanceId,Value={{item.id}} --start-time {{start}}T00:00:00Z --end-time {{end}}T00:00:00Z --period 86400 --statistics Average --output json',
+  rowsPath: 'Datapoints[].{date: Timestamp, cpu: Average}',
+};
+const CPU_SPEC = { type: 'line', rowsPath: '[]', x: 'date', y: ['cpu'], series: 'name' };
+
+const instances = (...ids) =>
+  JSON.stringify({
+    Reservations: [{ Instances: ids.map((id) => ({ InstanceId: id, Name: `web-${id}` })) }],
+  });
+const cpu = (value) =>
+  JSON.stringify({ Datapoints: [{ Timestamp: '2026-10-09', Average: value }] });
+
+function runChain(over = {}) {
+  return run({
+    commandTemplate: undefined,
+    steps: [LIST_STEP, CPU_STEP],
+    chartSpec: CPU_SPEC,
+    mode: 'CLOUDOPS',
+    ...over,
+  });
+}
+
+test('a chain runs step 2 once per row of step 1 and merges the parent fields into its rows', async () => {
+  reset();
+  S.execResults.push(ok(instances('i-1', 'i-2')), ok(cpu(10)), ok(cpu(20)));
+
+  const result = await runChain();
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.result.rows, [
+    { date: '2026-10-09', name: 'web-i-1', cpu: 10 },
+    { date: '2026-10-09', name: 'web-i-2', cpu: 20 },
+  ]);
+  assert.equal(S.execCalls.length, 3);
+  assert.ok(S.execCalls[1].argv.includes('Name=InstanceId,Value=i-1'));
+  assert.ok(S.execCalls[2].argv.includes('Name=InstanceId,Value=i-2'));
+  assert.ok(S.execCalls[1].argv.includes('2026-10-04T00:00:00Z'));
+  assert.equal(result.commands.length, 3);
+  assert.deepEqual(result.argv, S.execCalls[0].argv);
+  assert.equal(S.audits.length, 3, 'every command is audited');
+});
+
+test('a chain can be longer than two steps', async () => {
+  reset();
+  const VOLUMES = {
+    command:
+      'aws ec2 describe-volumes --filters Name=attachment.instance-id,Values={{item.id}} --output json',
+    rowsPath: 'Volumes[].{volumeId: VolumeId}',
+  };
+  const SNAPSHOTS = {
+    command:
+      'aws ec2 describe-snapshots --filters Name=volume-id,Values={{item.volumeId}} --output json',
+    rowsPath: 'Snapshots[].{snapshot: SnapshotId, size: VolumeSize}',
+  };
+  S.execResults.push(
+    ok(instances('i-1')),
+    ok(JSON.stringify({ Volumes: [{ VolumeId: 'vol-1' }, { VolumeId: 'vol-2' }] })),
+    ok(JSON.stringify({ Snapshots: [{ SnapshotId: 'snap-1', VolumeSize: 8 }] })),
+    ok(JSON.stringify({ Snapshots: [{ SnapshotId: 'snap-2', VolumeSize: 16 }] })),
+  );
+
+  const result = await runChain({
+    steps: [LIST_STEP, VOLUMES, SNAPSHOTS],
+    period: 'NONE',
+    chartSpec: { type: 'table', rowsPath: '[]', columns: ['name', 'volumeId', 'snapshot', 'size'] },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.result.rows, [
+    { name: 'web-i-1', volumeId: 'vol-1', snapshot: 'snap-1', size: 8 },
+    { name: 'web-i-1', volumeId: 'vol-2', snapshot: 'snap-2', size: 16 },
+  ]);
+  assert.ok(S.execCalls[3].argv.includes('Name=volume-id,Values=vol-2'));
+});
+
+test('a failing item is skipped and counted; the rest of the graph still draws', async () => {
+  reset();
+  S.execResults.push(
+    ok(instances('i-1', 'i-2')),
+    { stdout: '', stderr: 'Throttling', exitCode: 255, timedOut: false },
+    ok(cpu(20)),
+  );
+
+  const result = await runChain();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.result.rows.length, 1);
+  assert.equal(result.result.skippedItems, 1);
+});
+
+test('a step that fails for every item fails the graph, naming the step', async () => {
+  reset();
+  S.execResults.push(ok(instances('i-1')), {
+    stdout: '',
+    stderr: 'AccessDenied',
+    exitCode: 254,
+    timedOut: false,
+  });
+
+  const result = await runChain();
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /^Step 2: it failed for every item.*AccessDenied/);
+});
+
+test('an item whose value is not safe to put in a command is skipped, never run', async () => {
+  reset();
+  S.execResults.push(
+    ok(
+      JSON.stringify({
+        Reservations: [{ Instances: [{ InstanceId: 'i-1 --debug' }, { InstanceId: 'i-2' }] }],
+      }),
+    ),
+    ok(cpu(5)),
+  );
+
+  const result = await runChain();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.result.skippedItems, 1);
+  assert.equal(S.execCalls.length, 2);
+  assert.ok(!S.execCalls.some((c) => c.argv.includes('--debug')));
+});
+
+test('a mutating later step is refused by the policy and never runs', async () => {
+  reset();
+  S.execResults.push(ok(instances('i-1', 'i-2')));
+
+  const result = await runChain({
+    steps: [
+      LIST_STEP,
+      { command: 'aws ec2 terminate-instances --instance-ids {{item.id}}', rowsPath: '@' },
+    ],
+    period: 'NONE',
+    chartSpec: { type: 'table', rowsPath: '[]' },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.rejected, true);
+  assert.match(result.error, /^Step 2: The command was not run/);
+  assert.equal(S.execCalls.length, 1, 'only the listing ran');
+  assert.equal(S.audits.at(-1).action, AUDIT_ACTIONS.DASHBOARD_COMMAND_REJECTED);
+});
+
+test('a step runs for at most 25 items, and the result says it was cut short', async () => {
+  reset();
+  const ids = Array.from({ length: 30 }, (_, i) => `i-${i}`);
+  S.execResults.push(ok(instances(...ids)));
+  S.defaultStdout = cpu(1);
+
+  const result = await runChain({ chartSpec: { ...CPU_SPEC, series: undefined } });
+
+  assert.equal(result.ok, true);
+  assert.equal(S.execCalls.length, 1 + 25);
+  assert.equal(result.result.truncated, true);
+});
+
+test('a chain stops at 60 commands in all', async () => {
+  reset();
+  // Four steps of 1 + 25 + 25 + 25 commands would be 76.
+  const ids = Array.from({ length: 25 }, (_, i) => `i-${i}`);
+  const next = (command, field) => ({
+    command: `${command} --filters Name=x,Values={{item.${field}}} --output json`,
+    rowsPath: 'Items[].{key: Key}',
+  });
+  S.execResults.push(ok(instances(...ids)));
+  S.defaultStdout = JSON.stringify({ Items: [{ Key: 'k-1' }] });
+
+  const result = await runChain({
+    steps: [
+      LIST_STEP,
+      next('aws ec2 describe-volumes', 'id'),
+      next('aws ec2 describe-snapshots', 'key'),
+      next('aws ec2 describe-images', 'key'),
+    ],
+    period: 'NONE',
+    chartSpec: { type: 'table', rowsPath: '[]' },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(S.execCalls.length, 60);
+  assert.equal(result.commands.length, 60);
+  assert.equal(result.result.truncated, true);
+});
+
+test('a step 1 that fails names the step', async () => {
+  reset();
+  S.execResults.push({ stdout: '', stderr: 'nope', exitCode: 1, timedOut: false });
+
+  const result = await runChain();
+
+  assert.match(result.error, /^Step 1: The command failed/);
 });

@@ -75,7 +75,7 @@ function AddOperatorDialog({ organisations, busy, onSubmit, onClose }) {
         onChange={(e) => setPassword(e.target.value)}
       />
       <Field
-        label="Email (optional, for password reset links)"
+        label="Email (optional)"
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}

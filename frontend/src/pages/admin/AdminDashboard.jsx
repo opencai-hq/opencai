@@ -25,12 +25,7 @@ const SECTIONS = [
   {
     to: '/admin/branding',
     title: 'Manage Branding',
-    description: "This instance's display name, logo, and login image.",
-  },
-  {
-    to: '/admin/email',
-    title: 'Manage Email',
-    description: 'Outgoing mail for password reset links (master admin only).',
+    description: "This instance's display name, logo, login image, and outgoing email.",
   },
   {
     to: '/admin/chats',

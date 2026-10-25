@@ -104,4 +104,4 @@ function renderCommand(template, period, now = new Date()) {
   });
 }
 
-module.exports = { resolvePeriod, templateProblem, renderCommand };
+module.exports = { resolvePeriod, templateProblem, renderCommand, PLACEHOLDER, DATE, LITERAL_DATE };

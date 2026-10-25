@@ -182,7 +182,7 @@ sets MFA up again at sign-in. The same command works for any username.
 ### Password reset by email
 
 Optionally, people can reset their own password from the sign-in page with an emailed link. The
-master admin sets this up in Manage Email: an SMTP server (host, port, security, and username and
+master admin sets this up in Manage Branding, on the Email tab: an SMTP server (host, port, security, and username and
 password if it needs them), a From address, and the public URL people use to open OpenCAI, which
 the links point to. Use "Send test email" to check the settings, then switch sending on.
 

@@ -66,7 +66,7 @@ function DetailsForm({ operator, organisations, onSave }) {
     <form onSubmit={handleSubmit} className={`${sectionClass} space-y-4`}>
       <SectionHeading title="Details" />
       <Field
-        label="Email (for password reset links; leave empty to remove)"
+        label="Email (optional)"
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}

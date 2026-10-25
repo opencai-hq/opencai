@@ -124,17 +124,15 @@ function foldSmallCategories(rows, { category, value, groupBy }) {
 }
 
 /**
- * Turn a command's parsed JSON output into the rows one chart draws.
+ * The list of objects a JMESPath `rowsPath` selects from command output.
  *
- * @returns {{ columns: string[], rows: object[], rowCount: number, truncated: boolean }}
- *   `rowCount` is the number of rows before any cap; `truncated` is true when
- *   rows were dropped or folded together.
- * @throws {ChartDataError} when the output does not fit the definition.
+ * @throws {ChartDataError} when the expression is invalid or selects anything
+ *   but a list of objects.
  */
-function shapeRows(json, spec) {
+function selectObjects(json, rowsPath) {
   let found;
   try {
-    found = search(json, spec.rowsPath);
+    found = search(json, rowsPath);
   } catch (err) {
     throw new ChartDataError(`"rowsPath" is not a valid JMESPath expression: ${err.message}`);
   }
@@ -148,6 +146,19 @@ function shapeRows(json, spec) {
       '"rowsPath" must return a list of objects, e.g. Items[].{name: Name, value: Value}',
     );
   }
+  return found;
+}
+
+/**
+ * Turn a command's parsed JSON output into the rows one chart draws.
+ *
+ * @returns {{ columns: string[], rows: object[], rowCount: number, truncated: boolean }}
+ *   `rowCount` is the number of rows before any cap; `truncated` is true when
+ *   rows were dropped or folded together.
+ * @throws {ChartDataError} when the output does not fit the definition.
+ */
+function shapeRows(json, spec) {
+  const found = selectObjects(json, spec.rowsPath);
 
   let rows;
   if (spec.unnest) {
@@ -215,4 +226,11 @@ function shapeRows(json, spec) {
   return { columns, rows, rowCount, truncated };
 }
 
-module.exports = { chartSpecSchema, shapeRows, ChartDataError, OTHER_LABEL };
+module.exports = {
+  chartSpecSchema,
+  shapeRows,
+  selectObjects,
+  scalarFields,
+  ChartDataError,
+  OTHER_LABEL,
+};

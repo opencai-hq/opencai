@@ -131,6 +131,7 @@ How to write it:
 - Take every colour from THEME, so the graph works in light and dark mode: THEME.text for values, THEME.muted for labels, THEME.grid for grid lines, THEME.palette for the data. Text is 11 to 12 pixels.
 - Never copy values from output you looked at. Read everything from DATA on every run: there may be more or fewer rows, one row, no rows, or null values, and the page must still draw.
 - Build text with textContent, never innerHTML: the rows are data, not markup.
+- Label things by their names, not their IDs, when the rows have both: an instance called "web-1" reads better than "i-0a1b2c".
 
 What a finished graph has:
 - Values over time are a smooth curve, not straight segments: a 2.5 pixel line with rounded joins, and a soft fade of the same colour beneath it. Several categories over time are several such curves, or stacked bars when the total matters.

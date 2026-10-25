@@ -34,6 +34,12 @@ const MAX_SERIES = 8;
 const MAX_RESULT_BYTES = 200000;
 const MAX_CELL_CHARS = 200;
 const MAX_ERROR_CHARS = 500;
+// A chained graph: step 1 runs once, every later step once per row of the step
+// before it. These keep one refresh from turning into a flood of API calls.
+const MAX_CHAIN_STEPS = 5;
+const MAX_ITEMS_PER_STEP = 25;
+const MAX_COMMANDS_PER_RUN = 60;
+const MAX_CHAIN_RUN_MS = 3 * 60 * 1000;
 
 module.exports = {
   DASHBOARD_PERIODS,
@@ -47,4 +53,8 @@ module.exports = {
   MAX_RESULT_BYTES,
   MAX_CELL_CHARS,
   MAX_ERROR_CHARS,
+  MAX_CHAIN_STEPS,
+  MAX_ITEMS_PER_STEP,
+  MAX_COMMANDS_PER_RUN,
+  MAX_CHAIN_RUN_MS,
 };

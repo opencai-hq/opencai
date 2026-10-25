@@ -16,7 +16,7 @@ import { TopNav } from '../../components/TopNav';
 import { OperatorSidebar } from './components/OperatorSidebar';
 import { ViewToggle } from './components/ViewToggle';
 import { WorkspaceSelectorForm } from './components/WorkspaceSelectorForm';
-import { ChatSessionHeader } from './components/ChatSessionHeader';
+import { ChatSessionHeader, NewSessionButton } from './components/ChatSessionHeader';
 import { CloudOpsScreen } from './components/CloudOpsScreen';
 import { FinOpsScreen } from './components/FinOpsScreen';
 
@@ -331,10 +331,14 @@ export function OperatorPage() {
           onRenameSession={handleRenameSession}
         />
         {/* The toggle sits level with the main area's first line (the agent greeting,
-            the session header or the dashboard title), clear of the scrollbar. */}
+            the session header or the dashboard title), clear of the scrollbar. In an
+            open chat, New Session sits right beside it. */}
         <div className="relative flex min-h-0 flex-1 flex-col">
           {cloudOrOnPrem === 'cloud' && workspace && !editingWorkspace && (
-            <div className="absolute right-6 top-9 z-10">
+            <div className="absolute right-6 top-10 z-10 flex items-center gap-3">
+              {view !== 'dashboard' && currentSession && (
+                <NewSessionButton onClick={handleNewSession} />
+              )}
               <ViewToggle view={view} onChange={handleChangeView} />
             </div>
           )}
@@ -363,8 +367,9 @@ export function OperatorPage() {
             ) : (
               <>
                 {currentSession && (
-                  <div className="mx-auto mb-6 w-full max-w-4xl pr-28">
-                    <ChatSessionHeader session={currentSession} onNewSession={handleNewSession} />
+                  // Wide right padding keeps the session chip clear of New Session + the toggle.
+                  <div className="mx-auto mb-6 w-full max-w-7xl pr-60">
+                    <ChatSessionHeader session={currentSession} />
                   </div>
                 )}
                 {activeMode === 'CLOUDOPS' ? (

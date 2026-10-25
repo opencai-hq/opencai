@@ -481,3 +481,54 @@ test("deleteWidget: another Operator's graph is a 404 and is left alone", async 
   );
   assert.equal(S.widgets.length, 1);
 });
+
+/* ---- chains -------------------------------------------------------------- */
+
+const STEPS = [
+  {
+    command: 'aws ec2 describe-instances --output json',
+    rowsPath: 'Reservations[].Instances[].{id: InstanceId}',
+  },
+  {
+    command:
+      'aws cloudwatch get-metric-statistics --dimensions Name=InstanceId,Value={{item.id}} --start-time {{start}}T00:00:00Z --output json',
+    rowsPath: 'Datapoints[].{date: Timestamp, amount: Average}',
+  },
+];
+
+test('createWidget: a chain is run and stored with its first command as the graph command', async () => {
+  reset();
+  const { commandTemplate, ...body } = BODY;
+  assert.ok(commandTemplate);
+
+  const widget = await service.createWidget('user-1', { ...body, steps: STEPS });
+
+  assert.deepEqual(S.runs[0].steps, STEPS);
+  assert.deepEqual(widget.steps, STEPS);
+  assert.equal(widget.commandTemplate, STEPS[0].command);
+  assert.deepEqual(S.audits.at(-1).metadata.steps, STEPS);
+});
+
+test('refreshWidget: a chained graph re-runs its steps; a one-command graph has none', async () => {
+  reset();
+  const chained = seedWidget({ steps: STEPS, commandTemplate: STEPS[0].command });
+  const single = seedWidget();
+
+  await service.refreshWidget('user-1', chained.id);
+  const listed = await service.listWidgets('user-1', { workspaceId: 'ws-1', mode: 'FINOPS' });
+
+  assert.deepEqual(S.runs[0].steps, STEPS);
+  assert.equal(listed.widgets.find((w) => w.id === single.id).steps, null);
+});
+
+test('updateWidget: a period change is checked against every step of a chain', async () => {
+  reset();
+  const widget = seedWidget({ steps: STEPS, commandTemplate: STEPS[0].command });
+
+  await assert.rejects(
+    service.updateWidget('user-1', widget.id, { period: 'NONE' }),
+    fails(422, ERROR_CODES.DASHBOARD_WIDGET_INVALID),
+  );
+  await service.updateWidget('user-1', widget.id, { period: 'LAST_7_DAYS' });
+  assert.equal(S.runs.at(-1).period, 'LAST_7_DAYS');
+});

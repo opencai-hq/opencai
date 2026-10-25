@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../lib/AuthContext';
 import { getChatSettings, updateChatSettings } from '../../lib/adminApi';
 import { useToast } from '../../lib/ToastContext';
+import { SectionToggle } from '../../components/SectionToggle';
 import { AdminLayout } from './AdminLayout';
 import { AgentPrompts } from './AgentPrompts';
 
@@ -233,27 +234,12 @@ export function ManageChatSettings() {
         Selects which model the CloudOps/FinOps chat modules use, and what each agent is told.
       </p>
 
-      <div
-        role="group"
-        aria-label="Settings section"
-        className="mt-6 inline-flex gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-700 dark:bg-gray-900"
-      >
-        {SECTIONS.map(({ key, label }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setSection(key)}
-            aria-pressed={section === key}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-              section === key
-                ? 'bg-teal-600 text-white'
-                : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <SectionToggle
+        sections={SECTIONS}
+        value={section}
+        onChange={setSection}
+        label="Settings section"
+      />
 
       {/* Both sections stay mounted so switching does not discard unsaved edits. */}
       <form

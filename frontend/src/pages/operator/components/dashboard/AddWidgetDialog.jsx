@@ -3,6 +3,7 @@ import { Dialog, Field } from '../../../../components/Dialog';
 import { useAuth } from '../../../../lib/AuthContext';
 import { PERIOD_LABELS } from '../../../../lib/chartData';
 import { createWidget, previewWidget } from '../../../../lib/dashboardApi';
+import { CommandSteps } from './CommandSteps';
 import { WidgetChart } from './WidgetChart';
 
 const EXAMPLES = {
@@ -69,6 +70,7 @@ export function AddWidgetDialog({ workspace, mode, onCreated, onClose }) {
         query: draft.query,
         title: title.trim() || draft.title,
         commandTemplate: draft.commandTemplate,
+        steps: draft.steps,
         period: draft.period,
         chartSpec: draft.chartSpec,
         chartHtml: draft.chartHtml,
@@ -88,6 +90,7 @@ export function AddWidgetDialog({ workspace, mode, onCreated, onClose }) {
   }
 
   const showingPreview = phase === 'preview' || phase === 'saving';
+  const chained = (preview?.draft.steps?.length ?? 0) > 1;
 
   return (
     <Dialog title="Add graph" size="xl" onClose={onClose}>
@@ -188,12 +191,30 @@ export function AddWidgetDialog({ workspace, mode, onCreated, onClose }) {
 
           <div>
             <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
-              Command behind this graph
+              {chained ? 'Commands behind this graph' : 'Command behind this graph'}
             </p>
-            <pre className="mt-1 whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-3 font-mono text-xs text-gray-700 dark:bg-gray-950 dark:text-gray-300">
-              {preview.command}
-            </pre>
-            {preview.draft.period !== 'NONE' && (
+            {chained ? (
+              <div className="mt-1 rounded-lg bg-gray-50 p-3 dark:bg-gray-950">
+                <CommandSteps steps={preview.draft.steps} />
+                <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                  {preview.commands.length} commands ran for this preview.
+                  {preview.result.skippedItems > 0 &&
+                    ` ${preview.result.skippedItems} rows were skipped because their command failed.`}
+                </p>
+              </div>
+            ) : (
+              <pre className="mt-1 whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-3 font-mono text-xs text-gray-700 dark:bg-gray-950 dark:text-gray-300">
+                {preview.command}
+              </pre>
+            )}
+            {chained && (
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                Values in double braces are filled in each time the graph refreshes: {'{{item.…}}'}{' '}
+                from each row of the step before
+                {preview.draft.period !== 'NONE' && ', and dates from the period'}.
+              </p>
+            )}
+            {!chained && preview.draft.period !== 'NONE' && (
               <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                 Shown with today&apos;s dates. They move with the period each time the graph
                 refreshes, and you can change the period on the graph after saving.

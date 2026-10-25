@@ -8,7 +8,7 @@ const {
   MAX_ERROR_CHARS,
 } = require('../../constants/dashboard');
 const { loadWorkspaceForOperator } = require('../../ai/workspaceAccess');
-const { templateProblem } = require('../../ai/dashboard/period');
+const { chainProblem, stepsOf } = require('../../ai/dashboard/chain');
 const { runWidget, writeDashboardAudit } = require('../../ai/dashboard/widgetRunner');
 const { authorWidget, redrawPage } = require('../../ai/dashboard/widgetAuthor');
 const { singleFlight } = require('../../ai/dashboard/runLimiter');
@@ -22,6 +22,7 @@ function toWidget(row, now = Date.now()) {
     title: row.title,
     query: row.query,
     commandTemplate: row.commandTemplate,
+    steps: row.steps ?? null,
     period: row.period,
     chartSpec: row.chartSpec,
     chartHtml: row.chartHtml ?? null,
@@ -65,6 +66,7 @@ function runFor(userId, access, widget, trigger) {
     ...access,
     mode: widget.mode,
     commandTemplate: widget.commandTemplate,
+    steps: widget.steps,
     period: widget.period,
     chartSpec: widget.chartSpec,
     trigger,
@@ -97,7 +99,8 @@ async function previewWidget(userId, { workspaceId, mode, query }) {
  * and saved only if it works; the stored result is the server's own.
  */
 async function createWidget(userId, body) {
-  const { workspaceId, mode, query, title, commandTemplate, period, chartSpec, chartHtml } = body;
+  const { workspaceId, mode, query, title, steps, period, chartSpec, chartHtml } = body;
+  const commandTemplate = steps ? steps[0].command : body.commandTemplate;
   const access = await loadWorkspaceForOperator(userId, workspaceId);
 
   const count = await prisma.dashboardWidget.count({ where: { userId, workspaceId, mode } });
@@ -110,6 +113,7 @@ async function createWidget(userId, body) {
     ...access,
     mode,
     commandTemplate,
+    steps,
     period,
     chartSpec,
     trigger: 'save',
@@ -125,6 +129,7 @@ async function createWidget(userId, body) {
       title,
       query,
       commandTemplate,
+      steps: steps ?? undefined,
       period,
       chartSpec,
       chartHtml,
@@ -138,7 +143,7 @@ async function createWidget(userId, body) {
     workspaceId,
     action: AUDIT_ACTIONS.DASHBOARD_WIDGET_CREATED,
     outcome: AUDIT_OUTCOMES.SUCCESS,
-    metadata: { widgetId: row.id, title, commandTemplate, period },
+    metadata: { widgetId: row.id, title, commandTemplate, steps: steps ?? null, period },
   });
   return toWidget(row);
 }
@@ -153,7 +158,7 @@ async function updateWidget(userId, widgetId, { title, period }) {
 
   const periodChanged = period !== undefined && period !== widget.period;
   if (periodChanged) {
-    const problem = templateProblem(widget.commandTemplate, period);
+    const problem = chainProblem(stepsOf(widget), period);
     if (problem) throw invalid(`This graph's period cannot be changed to that: ${problem}.`);
     data.period = period;
   }

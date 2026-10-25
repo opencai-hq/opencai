@@ -63,7 +63,7 @@ export function FinOpsScreen({ subMode, onSelectSubMode, messages, onSend, onCon
         </div>
       )}
 
-      <div className={`mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 ${started ? '' : 'mt-6'}`}>
+      <div className={`mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 ${started ? '' : 'mt-6'}`}>
         <div
           className={`rounded-2xl border border-teal-200 bg-teal-50/40 p-6 dark:border-teal-900 dark:bg-teal-950/20 ${
             started ? 'hidden' : ''

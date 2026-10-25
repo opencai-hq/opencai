@@ -412,3 +412,87 @@ test('redrawPage: an unusable reply goes back to the model, then it gives up', a
   await assert.rejects(redrawPage(REDRAW), authorFailed(/html code block is missing/));
   assert.equal(S.providerCalls.length, MAX_SPEC_ATTEMPTS);
 });
+
+const CHAIN = {
+  title: 'CPU by instance',
+  steps: [
+    {
+      command: 'aws ec2 describe-instances --output json',
+      rowsPath: 'Reservations[].Instances[].{id: InstanceId}',
+    },
+    {
+      command:
+        'aws cloudwatch get-metric-statistics --dimensions Name=InstanceId,Value={{item.id}} --start-time {{start}}T00:00:00Z --end-time {{end}}T00:00:00Z --output json',
+      rowsPath: 'Datapoints[].{date: Timestamp, cpu: Average}',
+    },
+  ],
+  period: 'LAST_7_DAYS',
+  chartSpec: { type: 'line', rowsPath: '[]', x: 'date', y: ['cpu'], series: 'id', unit: '%' },
+};
+
+test('parseDraft: reads a chain, keeping its first command as the graph command', () => {
+  const { draft } = parseDraft(reply(CHAIN));
+  assert.deepEqual(draft.steps, CHAIN.steps);
+  assert.equal(draft.commandTemplate, CHAIN.steps[0].command);
+});
+
+test('parseDraft: a definition has a command or a chain, and a chain is at most 5 steps', () => {
+  assert.match(
+    parseDraft(reply({ ...CHAIN, commandTemplate: 'aws ec2 describe-volumes' })).problem,
+    /either "commandTemplate" or "steps"/,
+  );
+  const { steps, ...noCommand } = CHAIN;
+  assert.ok(steps);
+  assert.match(parseDraft(reply(noCommand)).problem, /either "commandTemplate" or "steps"/);
+  assert.match(
+    parseDraft(reply({ ...CHAIN, steps: Array(6).fill(CHAIN.steps[1]) })).problem,
+    /steps/,
+  );
+  assert.match(
+    parseDraft(reply({ ...CHAIN, steps: [CHAIN.steps[0], { command: 'aws ec2 x {{item.id}}' }] }))
+      .problem,
+    /rowsPath/,
+  );
+});
+
+test('a chained definition runs every step and returns every command that ran', async () => {
+  reset();
+  S.providerResponses.push(text(reply(CHAIN)));
+  S.execResults.push(
+    ok(
+      JSON.stringify({
+        Reservations: [{ Instances: [{ InstanceId: 'i-1' }, { InstanceId: 'i-2' }] }],
+      }),
+    ),
+    ok(JSON.stringify({ Datapoints: [{ Timestamp: '2026-10-09', Average: 12 }] })),
+    ok(JSON.stringify({ Datapoints: [{ Timestamp: '2026-10-09', Average: 30 }] })),
+  );
+
+  const result = await author({ mode: 'CLOUDOPS', query: 'cpu per instance' });
+
+  assert.deepEqual(result.draft.steps, CHAIN.steps);
+  assert.equal(result.commands.length, 3);
+  assert.match(result.commands[1], /Value=i-1 /);
+  assert.match(result.commands[2], /Value=i-2 /);
+  assert.equal(result.command, result.commands[0]);
+  assert.deepEqual(result.result.rows, [
+    { date: '2026-10-09', id: 'i-1', cpu: 12 },
+    { date: '2026-10-09', id: 'i-2', cpu: 30 },
+  ]);
+});
+
+test('a chain whose later step is wrong goes back to the model with the step named', async () => {
+  reset();
+  const broken = {
+    ...CHAIN,
+    steps: [CHAIN.steps[0], { ...CHAIN.steps[1], rowsPath: 'Nothing[]' }],
+  };
+  S.providerResponses.push(text(reply(broken)), text(reply(CHAIN)));
+  S.execResults.push(
+    ok(JSON.stringify({ Reservations: [{ Instances: [{ InstanceId: 'i-1' }] }] })),
+  );
+
+  await author({ mode: 'CLOUDOPS', query: 'cpu per instance' }).catch(() => {});
+
+  assert.match(S.providerCalls[1].newMessage, /Step 2: it failed for every item/);
+});

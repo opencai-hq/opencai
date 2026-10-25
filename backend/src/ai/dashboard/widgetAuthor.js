@@ -1,5 +1,6 @@
 // Turns an Operator's plain-language request into a dashboard graph: one
-// read-only command, a chart definition, and a small page that draws it. This is the only place a dashboard
+// read-only command (or a chain of them), a chart definition, and a small page
+// that draws it. This is the only place a dashboard
 // uses the model; once a graph is saved it runs without it (see widgetRunner).
 //
 // The model may run read-only commands to see what the output really looks
@@ -13,7 +14,12 @@ const { AppError } = require('../../middleware/errorHandler');
 const { ERROR_CODES, ERROR_MESSAGES } = require('../../constants/errors');
 const { AUDIT_ACTIONS, AUDIT_OUTCOMES } = require('../../constants/auditActions');
 const { CHAT_MODES } = require('../../constants/chatModes');
-const { DASHBOARD_PERIODS, MAX_TEMPLATE_CHARS } = require('../../constants/dashboard');
+const {
+  DASHBOARD_PERIODS,
+  MAX_TEMPLATE_CHARS,
+  MAX_CHAIN_STEPS,
+  MAX_ITEMS_PER_STEP,
+} = require('../../constants/dashboard');
 const { MAX_MODEL_TURNS_PER_MESSAGE, MAX_ORCHESTRATION_WALL_CLOCK_MS } = require('../constants');
 const { DEFAULT_REQUEST_LIMITS } = require('../settingsDefaults');
 const { resolveProviderConfig } = require('../providerConfig');
@@ -32,6 +38,7 @@ const { getCsp } = require('../csp');
 const { allowedBinariesForMode } = require('../systemPrompt.service');
 const { chartSpecSchema } = require('./chartSpec');
 const { chartHtmlSchema } = require('./chartHtml');
+const { stepsSchema } = require('./chain');
 const { PAGE_RULES } = require('./pagePrompt');
 const {
   runWidget,
@@ -51,7 +58,7 @@ const MODE_CONTEXT = Object.freeze({
   [CHAT_MODES.FINOPS]: 'This is the FinOps dashboard: graphs about cost, usage, tagging and waste.',
 });
 
-const AUTHOR_PROMPT = `You build one graph for an Operator's cloud dashboard in OpenCAI. The Workspace (cloud provider, account and environment) is already selected. The Operator describes the graph they want; you work out the single read-only CLI command that returns its data and how to turn its output into rows, and you write the small page that draws those rows.
+const AUTHOR_PROMPT = `You build one graph for an Operator's cloud dashboard in OpenCAI. The Workspace (cloud provider, account and environment) is already selected. The Operator describes the graph they want; you work out the read-only CLI command that returns its data (or a short chain of them, when one command cannot) and how to turn the output into rows, and you write the small page that draws those rows.
 
 How to work:
 - Call run_command to run a read-only command and see its real output before you decide. Do this whenever you are not certain of the exact shape of the output: the graph only works if your field paths match it. Call run_lookup for CLI help.
@@ -64,6 +71,11 @@ Your final reply must be one JSON object, then one \`\`\`html code block holding
 \`\`\`html
 ...the page...
 \`\`\`
+or, for a chain of commands (see steps below), the same with "steps" in place of "commandTemplate":
+{"title": "...", "steps": [{"command": "...", "rowsPath": "..."}, ...], "period": "...", "chartSpec": {...}}
+\`\`\`html
+...the page...
+\`\`\`
 
 title: short, under 60 characters.
 
@@ -72,6 +84,15 @@ commandTemplate: the one command run every time the graph refreshes.
 - Never write a real date in it. Where the command takes dates, write {{start}} and either {{end}} (the day after today, for an end date that is exclusive, as in AWS Cost Explorer) or {{end_inclusive}} (today, for an end date that is inclusive). They are replaced with YYYY-MM-DD dates on every run. For a timestamp write, for example, {{start}}T00:00:00Z.
 - A command you run with run_command to explore needs real dates. Only the final commandTemplate uses placeholders.
 - No backticks, pipes or other shell syntax. Do not use the CLI's own --query option with backtick literals; shape the data with rowsPath instead.
+
+steps (in place of commandTemplate, only when one command cannot return the data): up to ${MAX_CHAIN_STEPS} commands. Step 1 runs once. Every later step runs once for each row of the step before it -- for example, list the instances, then fetch the metrics of each one.
+- Each step has a "command" and a "rowsPath": JMESPath over that step's own output, giving a list of flat objects.
+- A later step reads a field of the row it runs for as {{item.<field>}}, e.g. --instance-ids {{item.id}}. Every later step must use at least one; step 1 uses none. Only plain values such as IDs and names can be put in a command (no spaces or quotes); a row whose value is not one is skipped.
+- Each row of a later step keeps the fields of the row it ran for, so the final rows can carry names from step 1 alongside values from the last step. A field of the same name is taken from the later step.
+- Only the first ${MAX_ITEMS_PER_STEP} rows of a step are run for, so narrow step 1 down to what the graph needs (filter by state, tag or type).
+- The commandTemplate rules above apply to every step; date placeholders may go in any step.
+- chartSpec works on the last step's rows, which are already a list: use "rowsPath": "[]".
+- Before you answer, try each later step with run_command on one real value, so its rowsPath matches the output.
 
 period: one of ${Object.values(DASHBOARD_PERIODS).join(', ')}. Use NONE only for a graph of current state whose command takes no dates, and then use no placeholders. Otherwise choose the period that matches the request, or LAST_30_DAYS when it does not say.
 
@@ -88,16 +109,29 @@ chartSpec: how the command's output becomes the rows your page draws. It draws n
 
 ${PAGE_RULES}
 
+An example of a chain's JSON object alone (AWS, daily CPU of each running instance):
+{"title":"Daily CPU by instance","steps":[{"command":"aws ec2 describe-instances --filters Name=instance-state-name,Values=running --output json","rowsPath":"Reservations[].Instances[].{id: InstanceId, name: (Tags[?Key=='Name'].Value)[0]}"},{"command":"aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name CPUUtilization --dimensions Name=InstanceId,Value={{item.id}} --start-time {{start}}T00:00:00Z --end-time {{end}}T00:00:00Z --period 86400 --statistics Average --output json","rowsPath":"Datapoints[].{date: Timestamp, cpu: Average}"}],"period":"LAST_7_DAYS","chartSpec":{"type":"line","rowsPath":"[]","x":"date","y":["cpu"],"series":"name","unit":"%"}}
+
 An example of the JSON object alone (AWS, daily cost by service). In your reply the html block follows it:
 {"title":"Daily cost by service","commandTemplate":"aws ce get-cost-and-usage --time-period Start={{start}},End={{end}} --granularity DAILY --metrics UnblendedCost --group-by Type=DIMENSION,Key=SERVICE --output json","period":"LAST_30_DAYS","chartSpec":{"type":"bar","rowsPath":"ResultsByTime[].{date: TimePeriod.Start, groups: Groups[].{service: Keys[0], amount: Metrics.UnblendedCost.Amount}}","unnest":"groups","x":"date","y":["amount"],"series":"service","unit":"USD"}}`;
 
-const draftSchema = z.object({
-  title: z.string().trim().min(1).max(MAX_TITLE_CHARS),
-  commandTemplate: z.string().trim().min(1).max(MAX_TEMPLATE_CHARS),
-  period: z.enum(Object.values(DASHBOARD_PERIODS)),
-  chartSpec: chartSpecSchema,
-  chartHtml: chartHtmlSchema,
-});
+// One command, or a chain of them in `steps`. A chain's first command is also
+// kept as `commandTemplate`, the command a graph shows.
+const draftSchema = z
+  .object({
+    title: z.string().trim().min(1).max(MAX_TITLE_CHARS),
+    commandTemplate: z.string().trim().min(1).max(MAX_TEMPLATE_CHARS).optional(),
+    steps: stepsSchema.optional(),
+    period: z.enum(Object.values(DASHBOARD_PERIODS)),
+    chartSpec: chartSpecSchema,
+    chartHtml: chartHtmlSchema,
+  })
+  .refine((draft) => Boolean(draft.commandTemplate) !== Boolean(draft.steps), {
+    message: 'give either "commandTemplate" or "steps", not both',
+  })
+  .transform((draft) =>
+    draft.steps ? { ...draft, commandTemplate: draft.steps[0].command } : draft,
+  );
 
 const HTML_FENCE = /```html[^\n]*\n([\s\S]*?)```/i;
 
@@ -165,9 +199,10 @@ function authorFailed(detail) {
 /**
  * Build a graph from a plain-language request and run it once.
  *
- * @returns {Promise<{ draft: { title, query, commandTemplate, period, chartSpec, chartHtml },
- *                     command: string, result: object }>} `command` is what ran
- *   for the preview, with real dates.
+ * @returns {Promise<{ draft: { title, query, commandTemplate, steps?, period, chartSpec, chartHtml },
+ *                     command: string, commands: string[], result: object }>}
+ *   `command` is the first command that ran for the preview, with real dates;
+ *   `commands` is every command that ran.
  * @throws {AppError} 503 when no AI provider is configured, 422 when no working
  *   graph came out of the model's budget.
  */
@@ -211,12 +246,13 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
 
       let problem = parsed.problem;
       if (parsed.draft) {
-        const { title, commandTemplate, period, chartSpec } = parsed.draft;
+        const { title, commandTemplate, steps, period, chartSpec } = parsed.draft;
         const run = await runWidget({
           ...target,
           mode,
           title,
           commandTemplate,
+          steps,
           period,
           chartSpec,
           trigger: 'preview',
@@ -225,6 +261,7 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
           return {
             draft: { ...parsed.draft, query },
             command: run.argv.join(' '),
+            commands: run.commands.map((argv) => argv.join(' ')),
             result: run.result,
           };
         }
