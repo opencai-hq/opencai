@@ -36,10 +36,12 @@ const { POLICY_VERDICTS } = require('../policy/policyVerdicts');
 const { combineOutput } = require('../sanitizer');
 const { getCsp } = require('../csp');
 const { allowedBinariesForMode } = require('../systemPrompt.service');
+const { currentDateRule } = require('../prompts/currentDate');
 const { chartSpecSchema } = require('./chartSpec');
 const { chartHtmlSchema } = require('./chartHtml');
 const { stepsSchema } = require('./chain');
 const { PAGE_RULES } = require('./pagePrompt');
+const { emitStatus } = require('../../realtime/progress');
 const {
   runWidget,
   execInDashboardSandbox,
@@ -210,7 +212,7 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
   const providerConfig = await resolveProviderConfig();
   const csp = getCsp(workspace.csp);
   const allowedBinaries = await allowedBinariesForMode(mode);
-  const systemPrompt = `${AUTHOR_PROMPT}\n\n${MODE_CONTEXT[mode] ?? ''}\n${providerRulesFor(csp)}`;
+  const systemPrompt = `${AUTHOR_PROMPT}\n\n${MODE_CONTEXT[mode] ?? ''}\n${providerRulesFor(csp)}\n${currentDateRule()}`;
   const limits = providerConfig.limits ?? DEFAULT_REQUEST_LIMITS;
   const target = { userId, workspace, credential, credentialUpdatedAt };
 
@@ -223,6 +225,7 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
     if (Date.now() - startedAt >= MAX_ORCHESTRATION_WALL_CLOCK_MS) break;
 
     const { history, newMessage } = fitConversation(conversation, limits);
+    emitStatus('Asking the AI');
     let reply;
     try {
       reply = await providerConfig.provider.sendMessage({
@@ -246,6 +249,7 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
 
       let problem = parsed.problem;
       if (parsed.draft) {
+        emitStatus('Testing the graph');
         const { title, commandTemplate, steps, period, chartSpec } = parsed.draft;
         const run = await runWidget({
           ...target,
@@ -269,6 +273,9 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
       }
 
       lastProblem = problem;
+      emitStatus(
+        `That graph didn't work (try ${specAttempts} of ${MAX_SPEC_ATTEMPTS}): ${problem}`,
+      );
       if (specAttempts >= MAX_SPEC_ATTEMPTS) break;
       conversation.push(
         { role: 'assistant', content: reply.content || '(empty reply)' },
@@ -302,6 +309,7 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
     conversation.push(toolCallNote(kind, commandText));
 
     if (rejection) {
+      emitStatus(`Not allowed: ${commandText} (${rejection})`);
       await writeDashboardAudit({
         userId,
         workspaceId: workspace.id,
@@ -315,6 +323,7 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
       continue;
     }
 
+    emitStatus(`Looking at ${commandText}`);
     let execution;
     try {
       execution = await execInDashboardSandbox({ ...target, argv: verdict.argv });

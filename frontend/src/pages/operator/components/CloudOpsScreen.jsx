@@ -8,7 +8,7 @@ const CLOUDOPS_PROMPTS = [
   'Create a new S3 bucket',
 ];
 
-export function CloudOpsScreen({ workspace, onEditWorkspace, messages, onSend, onConfirm, onCancel, sending }) {
+export function CloudOpsScreen({ workspace, onEditWorkspace, messages, onSend, onConfirm, onCancel, sending, liveStatus }) {
   // The intro and workspace card only matter before the conversation starts;
   // the workspace stays visible in the sidebar.
   const started = messages.length > 0;
@@ -36,6 +36,7 @@ export function CloudOpsScreen({ workspace, onEditWorkspace, messages, onSend, o
           onConfirm={onConfirm}
           onCancel={onCancel}
           sending={sending}
+          liveStatus={liveStatus}
         />
       </div>
     </div>

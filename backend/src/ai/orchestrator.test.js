@@ -294,6 +294,12 @@ test('plain text response ends the turn with one assistant TEXT row and no execu
   assert.equal(S.audits.length, 0);
   // The system prompt travels as a provider argument, never as a chat row.
   assert.ok(S.providerCalls[0].systemPrompt.startsWith('PERSONA PROMPT\n\n'));
+  // The model is told today's date, so it never guesses the year.
+  assert.ok(
+    S.providerCalls[0].systemPrompt.includes(
+      `Today's date is ${new Date().toISOString().slice(0, 10)} (UTC).`,
+    ),
+  );
   assert.equal(
     messages.some((m) => m.role === 'SYSTEM'),
     false,
@@ -1918,4 +1924,51 @@ test('a tool-call note written as reply text is run as the tool call it imitates
     S.classifyCalls.at(-1).commandString,
     'aws ec2 stop-instances --instance-ids i-1 --region ap-south-1',
   );
+});
+
+test('live progress: every saved row is reported once, in order, with status lines between', async () => {
+  const { withProgress } = require('../realtime/progress');
+  reset();
+  const session = makeSession();
+  S.providerResponses = [
+    {
+      type: 'command_request',
+      content: 'aws ec2 describe-instances',
+      command: 'aws ec2 describe-instances',
+    },
+    { type: 'text', content: 'You have 3 instances.' },
+  ];
+  S.classifyResults = [verdict({ verdict: POLICY_VERDICTS.ALLOW_READONLY })];
+  S.execResults = [{ stdout: 'out', stderr: '', exitCode: 0, timedOut: false }];
+
+  const events = [];
+  const { messages } = await withProgress(
+    (event) => events.push(event),
+    () =>
+      handleUserMessage({
+        session,
+        workspace: WORKSPACE,
+        credential: CREDENTIAL,
+        userId: 'user-1',
+        text: 'list instances',
+      }),
+  );
+
+  const reported = events.filter((e) => e.kind === 'message').map((e) => e.message);
+  assert.deepEqual(reported, messages);
+  const statuses = events.filter((e) => e.kind === 'status').map((e) => e.text);
+  assert.equal(statuses[0], 'Starting the environment');
+  assert.ok(statuses.includes('Asking the AI'));
+  assert.ok(
+    statuses.some((text) => text.startsWith('Running ') && text.includes('describe-instances')),
+  );
+  // The command's status comes before its rows.
+  const runningAt = events.findIndex((e) => e.kind === 'status' && e.text.startsWith('Running '));
+  const requestAt = events.findIndex(
+    (e) => e.kind === 'message' && e.message.kind === 'COMMAND_REQUEST',
+  );
+  assert.ok(runningAt < requestAt);
+  // Tagged so the transcript can show the command and the thinking in place.
+  assert.match(events[runningAt].command, /describe-instances/);
+  assert.equal(events.find((e) => e.text === 'Asking the AI').thinking, true);
 });

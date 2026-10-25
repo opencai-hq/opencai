@@ -1,14 +1,20 @@
 import { apiRequest } from './api';
+import { viaRealtime } from './realtime';
 
 export const listWidgets = (token, { workspaceId, mode }) =>
   apiRequest(`/api/dashboard/widgets?${new URLSearchParams({ workspaceId, mode })}`, { token });
 
 // Asks the AI to build a graph from a plain-language request. Nothing is saved.
-export const previewWidget = (token, body) =>
-  apiRequest('/api/dashboard/widgets/preview', { method: 'POST', token, body });
+// Over the live connection when it is open, so `onProgress` sees each step.
+export const previewWidget = (token, body, { realtime, onProgress } = {}) =>
+  viaRealtime(realtime, 'dashboard.preview', body, onProgress, () =>
+    apiRequest('/api/dashboard/widgets/preview', { method: 'POST', token, body }),
+  );
 
-export const createWidget = (token, body) =>
-  apiRequest('/api/dashboard/widgets', { method: 'POST', token, body });
+export const createWidget = (token, body, { realtime, onProgress } = {}) =>
+  viaRealtime(realtime, 'dashboard.create', body, onProgress, () =>
+    apiRequest('/api/dashboard/widgets', { method: 'POST', token, body }),
+  );
 
 export const updateWidget = (token, id, body) =>
   apiRequest(`/api/dashboard/widgets/${id}`, { method: 'PATCH', token, body });

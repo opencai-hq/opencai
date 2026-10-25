@@ -194,6 +194,9 @@ test('the system prompt carries the graph contract and the provider rule, not a 
 
   const { systemPrompt, apiKey, model } = S.providerCalls[0];
   assert.match(systemPrompt, /one JSON object, then one ```html code block/);
+  assert.ok(
+    systemPrompt.includes(`Today's date is ${new Date().toISOString().slice(0, 10)} (UTC).`),
+  );
   assert.match(systemPrompt, /DATA = \{ rows/);
   assert.match(systemPrompt, /no network/);
   assert.match(systemPrompt, /smooth curve/);
@@ -495,4 +498,28 @@ test('a chain whose later step is wrong goes back to the model with the step nam
   await author({ mode: 'CLOUDOPS', query: 'cpu per instance' }).catch(() => {});
 
   assert.match(S.providerCalls[1].newMessage, /Step 2: it failed for every item/);
+});
+
+test('live progress: the Operator sees each look, each try and why a try failed', async () => {
+  const { withProgress } = require('../../realtime/progress');
+  reset();
+  S.providerResponses.push(
+    { type: 'command_request', command: 'aws ce get-cost-and-usage --output json' },
+    spec({ chartSpec: { type: 'line', rowsPath: 'Nothing', x: 'date', y: ['amount'] } }),
+    spec(),
+  );
+  S.execResults.push(ok(COST_OUTPUT), ok(COST_OUTPUT), ok(COST_OUTPUT));
+
+  const statuses = [];
+  await withProgress(
+    (event) => statuses.push(event.text),
+    () => author(),
+  );
+
+  assert.equal(statuses[0], 'Asking the AI');
+  assert.match(statuses[1], /^Looking at aws ce get-cost-and-usage/);
+  assert.ok(statuses.includes('Testing the graph'));
+  assert.ok(
+    statuses.some((text) => /^That graph didn't work \(try 1 of 3\): .*rowsPath/.test(text)),
+  );
 });

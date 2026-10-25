@@ -23,6 +23,7 @@ const { allowedBinariesForMode } = require('../systemPrompt.service');
 const { executeInSandbox } = require('../sandbox/sandboxManager');
 const pool = require('../sandbox/dashboardSandboxPool');
 const { withUserSlot } = require('./runLimiter');
+const { emitStatus } = require('../../realtime/progress');
 const { resolvePeriod } = require('./period');
 const { chainProblem, renderStep, stepsOf, ItemValueError } = require('./chain');
 const {
@@ -105,11 +106,13 @@ async function writeDashboardAudit({ userId, workspaceId, action, outcome, metad
  * Check one rendered command against the policy, run it and parse its JSON.
  *
  * @param {Function} params.audit (action, outcome, metadata) => Promise
+ * @param {?string} [params.status] what the Operator is told while it runs.
  * @returns {Promise<{ ok: true, json: any, argv: string[] }
  *                  | { ok: false, error: string, rejected?: boolean }>}
  */
 async function runCommand({
   rendered,
+  status,
   userId,
   workspace,
   credential,
@@ -134,6 +137,7 @@ async function runCommand({
     return { ok: false, rejected: true, error: `The command was not run: ${reason}` };
   }
 
+  emitStatus(status ?? `Running ${verdict.argv.join(' ')}`);
   let execution;
   try {
     execution = await execInDashboardSandbox({
@@ -231,8 +235,17 @@ async function runWidget({
       outcome,
       metadata: { widgetId, trigger, ...extra },
     });
-  const run = (rendered) =>
-    runCommand({ rendered, userId, workspace, credential, credentialUpdatedAt, mode, audit });
+  const run = (rendered, status) =>
+    runCommand({
+      rendered,
+      status,
+      userId,
+      workspace,
+      credential,
+      credentialUpdatedAt,
+      mode,
+      audit,
+    });
   const failed = (i, out) =>
     chain.length > 1 ? { ...out, error: `Step ${i + 1}: ${out.error}` } : out;
 
@@ -266,14 +279,17 @@ async function runWidget({
     const rows = [];
     let failures = 0;
     let lastError = null;
-    for (const parent of parents) {
+    for (const [k, parent] of parents.entries()) {
       if (commands.length >= MAX_COMMANDS_PER_RUN || Date.now() - startedAt >= MAX_CHAIN_RUN_MS) {
         truncated = true;
         break;
       }
       let out;
       try {
-        out = await run(renderStep(chain[i].command, dates, parent));
+        out = await run(
+          renderStep(chain[i].command, dates, parent),
+          `Step ${i + 1} of ${chain.length}: item ${k + 1} of ${parents.length}`,
+        );
       } catch (err) {
         if (!(err instanceof ItemValueError)) throw err;
         out = { ok: false, error: `The command cannot be used: ${err.message}` };

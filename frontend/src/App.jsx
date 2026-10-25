@@ -2,6 +2,7 @@ import { Navigate, Route, BrowserRouter, Routes } from 'react-router-dom';
 import { AuthProvider } from './lib/AuthContext';
 import { ThemeProvider } from './lib/ThemeContext';
 import { WorkspaceProvider } from './lib/WorkspaceContext';
+import { RealtimeProvider } from './lib/RealtimeContext';
 import { ToastProvider } from './lib/ToastContext';
 import { BrandingFavicon } from './lib/useBranding';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -39,116 +40,118 @@ function App() {
       <BrandingFavicon />
       <ToastProvider>
         <AuthProvider>
-          <WorkspaceProvider>
-            <BrowserRouter>
-              <SessionEvents />
-              <Routes>
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/mfa/verify" element={<MfaVerifyPage />} />
-                <Route path="/mfa/enroll" element={<MfaEnrollPage />} />
-                <Route path="/change-password" element={<ChangePasswordPage />} />
-                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-                <Route path="/reset-password" element={<ResetPasswordPage />} />
-                <Route
-                  path="/dashboard"
-                  element={
-                    <ProtectedRoute>
-                      <DashboardPage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin"
-                  element={
-                    <AdminRoute>
-                      <AdminDashboard />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="/admin/administrators"
-                  element={
-                    <AdminRoute>
-                      <ManageAdministrators />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="/admin/operators"
-                  element={
-                    <AdminRoute>
-                      <ManageOperators />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="/admin/operators/:id"
-                  element={
-                    <AdminRoute>
-                      <OperatorDetail />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="/admin/organisations"
-                  element={
-                    <AdminRoute>
-                      <ManageOrganisations />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="/admin/organisations/:id"
-                  element={
-                    <AdminRoute>
-                      <OrganisationDetail />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="/admin/chat-settings"
-                  element={
-                    <AdminRoute>
-                      <ManageChatSettings />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="/admin/branding"
-                  element={
-                    <AdminRoute>
-                      <ManageBranding />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="/admin/chats"
-                  element={
-                    <AdminRoute>
-                      <ManageChats />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="/operator"
-                  element={
-                    <OperatorRoute>
-                      <OperatorPage />
-                    </OperatorRoute>
-                  }
-                />
-                <Route
-                  path="/operator/history"
-                  element={
-                    <OperatorRoute>
-                      <ChatHistoryPage />
-                    </OperatorRoute>
-                  }
-                />
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
-              </Routes>
-            </BrowserRouter>
-          </WorkspaceProvider>
+          <RealtimeProvider>
+            <WorkspaceProvider>
+              <BrowserRouter>
+                <SessionEvents />
+                <Routes>
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/mfa/verify" element={<MfaVerifyPage />} />
+                  <Route path="/mfa/enroll" element={<MfaEnrollPage />} />
+                  <Route path="/change-password" element={<ChangePasswordPage />} />
+                  <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                  <Route path="/reset-password" element={<ResetPasswordPage />} />
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <ProtectedRoute>
+                        <DashboardPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin"
+                    element={
+                      <AdminRoute>
+                        <AdminDashboard />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/administrators"
+                    element={
+                      <AdminRoute>
+                        <ManageAdministrators />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/operators"
+                    element={
+                      <AdminRoute>
+                        <ManageOperators />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/operators/:id"
+                    element={
+                      <AdminRoute>
+                        <OperatorDetail />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/organisations"
+                    element={
+                      <AdminRoute>
+                        <ManageOrganisations />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/organisations/:id"
+                    element={
+                      <AdminRoute>
+                        <OrganisationDetail />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/chat-settings"
+                    element={
+                      <AdminRoute>
+                        <ManageChatSettings />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/branding"
+                    element={
+                      <AdminRoute>
+                        <ManageBranding />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/chats"
+                    element={
+                      <AdminRoute>
+                        <ManageChats />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="/operator"
+                    element={
+                      <OperatorRoute>
+                        <OperatorPage />
+                      </OperatorRoute>
+                    }
+                  />
+                  <Route
+                    path="/operator/history"
+                    element={
+                      <OperatorRoute>
+                        <ChatHistoryPage />
+                      </OperatorRoute>
+                    }
+                  />
+                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                </Routes>
+              </BrowserRouter>
+            </WorkspaceProvider>
+          </RealtimeProvider>
         </AuthProvider>
       </ToastProvider>
     </ThemeProvider>

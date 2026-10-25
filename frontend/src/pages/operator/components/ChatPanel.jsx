@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { LogoTracer } from '../../../components/LogoTracer';
 
 // A Markdown element rendered as `Tag` with fixed classes. react-markdown also
 // passes the source `node`, which must not reach the DOM.
@@ -175,10 +176,21 @@ const isRequest = (m) => m.kind === 'LOOKUP_REQUEST' || m.kind === 'COMMAND_REQU
  *   - answer:     the closing text reply, if the turn ended with one
  *   - actionable: a command awaiting confirmation (plus its explanation and
  *                 dry-run output), which must stay visible
+ *
+ * While `live`, the last turn is still being worked on: it is kept (or added,
+ * empty) as a live turn, and none of its text is taken as the answer yet.
  */
-function groupMessages(messages) {
+function groupMessages(messages, live = false) {
   const groups = [];
   let turn = null;
+
+  const newTurn = (prev, fallbackKey) => ({
+    type: 'turn',
+    // Keyed by the message it answers, so it stays mounted as rows arrive.
+    key: prev?.type === 'user' ? `turn-${prev.message.id}` : fallbackKey,
+    startedAt: prev?.message?.createdAt,
+    rows: [],
+  });
 
   for (const m of messages) {
     if (m.role === 'USER') {
@@ -187,15 +199,19 @@ function groupMessages(messages) {
       continue;
     }
     if (!turn) {
-      const prev = groups[groups.length - 1];
-      turn = { type: 'turn', key: m.id, startedAt: prev?.message?.createdAt, rows: [] };
+      turn = newTurn(groups[groups.length - 1], m.id);
       groups.push(turn);
     }
     turn.rows.push(m);
   }
 
+  if (live && groups.at(-1)?.type !== 'turn') {
+    groups.push(newTurn(groups.at(-1), 'turn-live'));
+  }
+
   for (const g of groups) {
     if (g.type !== 'turn') continue;
+    g.live = live && g === groups.at(-1);
     const rows = [...g.rows];
     let actionable = [];
     const pendingIdx = rows.findIndex((m) => m.status === 'PENDING_CONFIRMATION');
@@ -203,7 +219,7 @@ function groupMessages(messages) {
       const start = pendingIdx > 0 && rows[pendingIdx - 1].kind === 'TEXT' ? pendingIdx - 1 : pendingIdx;
       actionable = rows.splice(start);
     }
-    const answer = actionable.length === 0 && rows.at(-1)?.kind === 'TEXT' ? rows.pop() : null;
+    const answer = !g.live && actionable.length === 0 && rows.at(-1)?.kind === 'TEXT' ? rows.pop() : null;
     g.steps = rows;
     g.answer = answer;
     g.actionable = actionable;
@@ -271,57 +287,115 @@ function StepItem({ message }) {
   );
 }
 
-function ThinkingDropdown({ steps, startedAt, endedAt }) {
-  const [open, setOpen] = useState(false);
+// What the live turn is doing right now, pushed over the live connection: the
+// command being run, or a step such as "Signing in to AWS". The AI thinking
+// needs no line of its own; the dropdown already says "Thinking".
+function LiveStep({ status }) {
+  if (!status || status.thinking) return null;
+  if (status.command) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <code className="break-all font-mono text-xs text-gray-800 dark:text-gray-100">$ {status.command}</code>
+        <span className="animate-pulse text-xs text-teal-600 dark:text-teal-400">Running…</span>
+      </div>
+    );
+  }
+  return <p className="animate-pulse text-xs text-gray-500 dark:text-gray-400">{status.text}…</p>;
+}
+
+// Shown in turn while a reply is being worked on, so a long turn visibly moves.
+const THINKING_WORDS = [
+  'Thinking',
+  'Architecting',
+  'Provisioning',
+  'Orchestrating',
+  'Scaling',
+  'Load-balancing',
+  'Containerising',
+  'Deploying',
+  'Autoscaling',
+  'Clustering',
+  'Replicating',
+  'Sharding',
+  'Caching',
+  'Routing',
+  'Peering',
+  'Failing over',
+  'Spinning up',
+  'Terraforming',
+];
+const THINKING_WORD_MS = 6000;
+
+function useThinkingWord(active) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = setInterval(() => setIndex((i) => (i + 1) % THINKING_WORDS.length), THINKING_WORD_MS);
+    return () => clearInterval(timer);
+  }, [active]);
+  return THINKING_WORDS[index];
+}
+
+function ThinkingDropdown({ steps, startedAt, endedAt, live = false, liveStatus = null }) {
+  // null until the Operator clicks it: a live turn starts open so each step
+  // shows as it happens, and a finished one starts folded.
+  const [toggled, setToggled] = useState(null);
+  const thinkingWord = useThinkingWord(live);
+  // Nothing to expand until the first step or live command arrives.
+  const hasSteps = steps.length > 0 || (live && liveStatus != null && !liveStatus.thinking);
+  const open = hasSteps && (toggled ?? live);
   const commandCount = steps.filter(isRequest).length;
   const duration = formatDuration(startedAt, endedAt);
-  const label = [
-    duration ? `Thought for ${duration}` : 'Thought',
-    commandCount > 0 ? `ran ${commandCount} command${commandCount === 1 ? '' : 's'}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const commands = commandCount > 0 ? `ran ${commandCount} command${commandCount === 1 ? '' : 's'}` : null;
+  const label = live ? (
+    <>
+      <span key={thinkingWord} className="thinking-word">
+        {thinkingWord}…
+      </span>
+      {commands && ` · ${commands}`}
+    </>
+  ) : (
+    [duration ? `Thought for ${duration}` : 'Thought', commands].filter(Boolean).join(' · ')
+  );
 
   return (
-    <div className="text-left">
+    <div className="text-left" role={live ? 'status' : undefined}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex items-center gap-1 rounded-md py-1 text-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100"
+        onClick={() => setToggled(!open)}
+        disabled={!hasSteps}
+        aria-expanded={hasSteps ? open : undefined}
+        className="flex items-center gap-2 rounded-md py-1 text-sm text-gray-500 hover:text-gray-800 disabled:cursor-default disabled:hover:text-gray-500 dark:text-gray-400 dark:hover:text-gray-100 dark:disabled:hover:text-gray-400"
       >
-        {label}
-        <ChevronIcon open={open} />
+        {live && <LogoTracer className="h-5 w-7" />}
+        <span className="flex items-center gap-1 [perspective:400px]">
+          {label}
+          {hasSteps && <ChevronIcon open={open} />}
+        </span>
       </button>
       {open && (
         <div className="ml-1.5 mt-1 space-y-3 border-l-2 border-gray-200 pl-4 dark:border-gray-700">
           {steps.map((m) => (
             <StepItem key={m.id} message={m} />
           ))}
+          {live && <LiveStep status={liveStatus} />}
         </div>
       )}
     </div>
   );
 }
 
-function ThinkingIndicator() {
-  return (
-    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400" role="status">
-      <span className="flex gap-1" aria-hidden="true">
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500 [animation-delay:-0.3s]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500 [animation-delay:-0.15s]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" />
-      </span>
-      Thinking…
-    </div>
-  );
-}
-
-function AssistantTurn({ turn, onConfirm, onCancel, sending }) {
+function AssistantTurn({ turn, onConfirm, onCancel, sending, liveStatus }) {
   return (
     <div className="space-y-2">
-      {turn.steps.length > 0 && (
-        <ThinkingDropdown steps={turn.steps} startedAt={turn.startedAt} endedAt={turn.endedAt} />
+      {(turn.steps.length > 0 || turn.live) && (
+        <ThinkingDropdown
+          steps={turn.steps}
+          startedAt={turn.startedAt}
+          endedAt={turn.endedAt}
+          live={turn.live}
+          liveStatus={turn.live ? liveStatus : null}
+        />
       )}
       {turn.answer && <TextBubble message={turn.answer} />}
       {turn.actionable.map((m) => (
@@ -353,8 +427,8 @@ function scrollAncestorToBottom(el) {
  * the newest message in view. `boxed` renders it as a bordered card with its
  * own scrollbar, for previews such as the Chat History list.
  */
-export function ChatTranscript({ messages, onConfirm, onCancel, sending = false, boxed = false }) {
-  const groups = groupMessages(messages);
+export function ChatTranscript({ messages, onConfirm, onCancel, sending = false, liveStatus = null, boxed = false }) {
+  const groups = groupMessages(messages, sending);
   const boxRef = useRef(null);
   const endRef = useRef(null);
 
@@ -366,7 +440,7 @@ export function ChatTranscript({ messages, onConfirm, onCancel, sending = false,
     } else {
       scrollAncestorToBottom(endRef.current);
     }
-  }, [messages, sending, boxed]);
+  }, [messages, sending, liveStatus, boxed]);
 
   return (
     <div
@@ -381,16 +455,22 @@ export function ChatTranscript({ messages, onConfirm, onCancel, sending = false,
         g.type === 'user' ? (
           <TextBubble key={g.message.id} message={g.message} />
         ) : (
-          <AssistantTurn key={g.key} turn={g} onConfirm={onConfirm} onCancel={onCancel} sending={sending} />
+          <AssistantTurn
+            key={g.key}
+            turn={g}
+            onConfirm={onConfirm}
+            onCancel={onCancel}
+            sending={sending}
+            liveStatus={liveStatus}
+          />
         ),
       )}
-      {sending && <ThinkingIndicator />}
       <div ref={endRef} />
     </div>
   );
 }
 
-export function ChatPanel({ messages, onSend, suggestedPrompts, onConfirm, onCancel, sending }) {
+export function ChatPanel({ messages, onSend, suggestedPrompts, onConfirm, onCancel, sending, liveStatus }) {
   const [draft, setDraft] = useState('');
   const started = messages.length > 0;
 
@@ -406,7 +486,7 @@ export function ChatPanel({ messages, onSend, suggestedPrompts, onConfirm, onCan
     // the conversation is short (and sticks there once it scrolls).
     <div className="flex flex-1 flex-col">
       {started && (
-        <ChatTranscript messages={messages} onConfirm={onConfirm} onCancel={onCancel} sending={sending} />
+        <ChatTranscript messages={messages} onConfirm={onConfirm} onCancel={onCancel} sending={sending} liveStatus={liveStatus} />
       )}
 
       {/* Pinned to the bottom of the scrolling chat section. */}

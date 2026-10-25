@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
 import { useToast } from '../../lib/ToastContext';
 import { useWorkspace } from '../../lib/WorkspaceContext';
+import { useRealtime } from '../../lib/RealtimeContext';
 import {
   createChatSession,
   getChatSession,
@@ -61,6 +62,10 @@ export function OperatorPage() {
   const [messagesBySession, setMessagesBySession] = useState({});
   const [recentSessions, setRecentSessions] = useState([]);
   const [sending, setSending] = useState(false);
+  // What the running turn is doing right now ({ text, command?, thinking? }),
+  // from the live connection.
+  const [liveStatus, setLiveStatus] = useState(null);
+  const realtime = useRealtime();
 
   const recentRequestRef = useRef(0);
 
@@ -213,6 +218,37 @@ export function OperatorPage() {
       .catch(() => {});
   }
 
+  // Each step of a turn arrives over the live connection as it is saved: show
+  // it at once. `optimisticId` is the placeholder for the Operator's message,
+  // which the saved one replaces.
+  function liveProgress(sessionId, optimisticId) {
+    return (event) => {
+      if (event.kind === 'status') {
+        setLiveStatus(event);
+      } else if (event.kind === 'message') {
+        // A saved row means the command that was running has finished.
+        setLiveStatus((current) => (current?.command ? null : current));
+        setMessagesBySession((prev) => {
+          const list = (prev[sessionId] || []).filter(
+            (m) => !(optimisticId && event.message.role === 'USER' && m.id === optimisticId),
+          );
+          return { ...prev, [sessionId]: mergeMessages(list, [event.message]) };
+        });
+      }
+    };
+  }
+
+  // A turn keeps running on the server when the connection drops; once it is
+  // back, reload the open chat so it shows whatever was saved meanwhile.
+  const seenConnectionsRef = useRef(realtime.connections);
+  useEffect(() => {
+    if (realtime.connections > 1 && realtime.connections !== seenConnectionsRef.current) {
+      if (currentSession) resyncMessages(currentSession.id);
+    }
+    seenConnectionsRef.current = realtime.connections;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [realtime.connections]);
+
   async function handleSend(text) {
     if (!workspace || !sessionKey || sending) return;
     if (activeMode === 'FINOPS' && !financeSubMode) return;
@@ -252,7 +288,10 @@ export function OperatorPage() {
     }));
     setSending(true);
     try {
-      const res = await sendChatMessage(token, sessionId, text);
+      const res = await sendChatMessage(token, sessionId, text, {
+        realtime: realtime.client,
+        onProgress: liveProgress(sessionId, optimistic.id),
+      });
       applyContext(sessionId, res.context);
       setMessagesBySession((prev) => ({
         ...prev,
@@ -269,6 +308,7 @@ export function OperatorPage() {
       resyncMessages(sessionId);
     } finally {
       setSending(false);
+      setLiveStatus(null);
     }
   }
 
@@ -276,7 +316,10 @@ export function OperatorPage() {
     if (!currentSession) return;
     setSending(true);
     try {
-      const res = await confirmChatMessage(token, currentSession.id, messageId);
+      const res = await confirmChatMessage(token, currentSession.id, messageId, {
+        realtime: realtime.client,
+        onProgress: liveProgress(currentSession.id),
+      });
       applyContext(currentSession.id, res.context);
       setMessagesBySession((prev) => ({
         ...prev,
@@ -287,6 +330,7 @@ export function OperatorPage() {
       resyncMessages(currentSession.id);
     } finally {
       setSending(false);
+      setLiveStatus(null);
     }
   }
 
@@ -294,7 +338,10 @@ export function OperatorPage() {
     if (!currentSession) return;
     setSending(true);
     try {
-      const res = await cancelChatMessage(token, currentSession.id, messageId);
+      const res = await cancelChatMessage(token, currentSession.id, messageId, {
+        realtime: realtime.client,
+        onProgress: liveProgress(currentSession.id),
+      });
       setMessagesBySession((prev) => ({
         ...prev,
         [currentSession.id]: mergeMessages(prev[currentSession.id] || [], res.messages),
@@ -304,6 +351,7 @@ export function OperatorPage() {
       resyncMessages(currentSession.id);
     } finally {
       setSending(false);
+      setLiveStatus(null);
     }
   }
 
@@ -381,6 +429,7 @@ export function OperatorPage() {
                     onConfirm={handleConfirm}
                     onCancel={handleCancel}
                     sending={sending}
+                    liveStatus={liveStatus}
                   />
                 ) : (
                   <FinOpsScreen
@@ -391,6 +440,7 @@ export function OperatorPage() {
                     onConfirm={handleConfirm}
                     onCancel={handleCancel}
                     sending={sending}
+                    liveStatus={liveStatus}
                   />
                 )}
               </>

@@ -520,3 +520,19 @@ test('a step 1 that fails names the step', async () => {
 
   assert.match(result.error, /^Step 1: The command failed/);
 });
+
+test('live progress: each command is reported as it runs, and chain items by step and count', async () => {
+  const { withProgress } = require('../../realtime/progress');
+  reset();
+  S.execResults.push(ok(instances('i-1', 'i-2')), ok(cpu(10)), ok(cpu(20)));
+
+  const statuses = [];
+  const result = await withProgress(
+    (event) => statuses.push(event.text),
+    () => runChain(),
+  );
+
+  assert.equal(result.ok, true);
+  assert.match(statuses[0], /^Running aws ec2 describe-instances/);
+  assert.deepEqual(statuses.slice(1), ['Step 2 of 2: item 1 of 2', 'Step 2 of 2: item 2 of 2']);
+});

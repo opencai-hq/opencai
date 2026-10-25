@@ -46,6 +46,7 @@
     "prisma": "7.10.0",
     "qrcode": "^1.5.4",
     "shell-quote": "^1.10.0",
+    "ws": "^8.22.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {

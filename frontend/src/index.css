@@ -33,3 +33,92 @@
     animation: none;
   }
 }
+
+/* Chat (pages/operator/components/ChatPanel.jsx): each new "Thinking" word
+   rolls in like the next face of a cube turning upwards. */
+@keyframes thinking-word-in {
+  from {
+    opacity: 0;
+    transform: rotateX(-90deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thinking-word {
+  display: inline-block;
+  transform-origin: 50% 50% -0.6em;
+  animation: thinking-word-in 450ms cubic-bezier(0.2, 0.8, 0.3, 1.2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-word {
+    animation: none;
+  }
+}
+
+/* Loader (components/LogoTracer.jsx): the logo draws itself, holds, un-draws
+   from its start, and loops; the circuit traces and their nodes follow. */
+@keyframes logo-tracer-outline {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  45%,
+  65% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -1;
+  }
+}
+@keyframes logo-tracer-trace {
+  0%,
+  25% {
+    stroke-dashoffset: 1;
+  }
+  50%,
+  70% {
+    stroke-dashoffset: 0;
+  }
+  95%,
+  100% {
+    stroke-dashoffset: -1;
+  }
+}
+@keyframes logo-tracer-node {
+  0%,
+  45% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  55%,
+  75% {
+    opacity: 1;
+    transform: none;
+  }
+  95%,
+  100% {
+    opacity: 0;
+    transform: scale(0);
+  }
+}
+.logo-tracer-outline {
+  stroke-dasharray: 1;
+  animation: logo-tracer-outline 2.4s ease-in-out infinite;
+}
+.logo-tracer-trace {
+  stroke-dasharray: 1;
+  animation: logo-tracer-trace 2.4s ease-in-out infinite;
+}
+.logo-tracer-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: logo-tracer-node 2.4s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-tracer-outline,
+  .logo-tracer-trace,
+  .logo-tracer-node {
+    animation: none;
+  }
+}

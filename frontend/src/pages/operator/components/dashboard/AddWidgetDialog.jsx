@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import { Dialog, Field } from '../../../../components/Dialog';
+import { LogoTracer } from '../../../../components/LogoTracer';
 import { useAuth } from '../../../../lib/AuthContext';
+import { useRealtime } from '../../../../lib/RealtimeContext';
 import { PERIOD_LABELS } from '../../../../lib/chartData';
 import { createWidget, previewWidget } from '../../../../lib/dashboardApi';
 import { CommandSteps } from './CommandSteps';
@@ -18,6 +20,9 @@ const EXAMPLES = {
     'Total cost this month',
   ],
 };
+
+// How many of the latest live steps the dialog shows while a graph is built.
+const MAX_STEPS_SHOWN = 6;
 
 const secondaryClass =
   'rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700';
@@ -39,15 +44,29 @@ export function AddWidgetDialog({ workspace, mode, onCreated, onClose }) {
   const [error, setError] = useState('');
   // Ignores a preview that comes back after the Operator has moved on.
   const requestRef = useRef(0);
+  // The latest steps of the graph being built, from the live connection.
+  const [steps, setSteps] = useState([]);
+  const realtime = useRealtime();
 
   async function generate() {
     const text = query.trim();
     if (!text) return;
     const requestId = ++requestRef.current;
     setError('');
+    setSteps([]);
     setPhase('generating');
+    let count = 0;
+    const onProgress = (event) => {
+      if (event.kind !== 'status' || requestId !== requestRef.current) return;
+      count += 1;
+      setSteps((prev) => [...prev, { key: count, text: event.text }].slice(-MAX_STEPS_SHOWN));
+    };
     try {
-      const result = await previewWidget(token, { workspaceId: workspace.id, mode, query: text });
+      const result = await previewWidget(
+        token,
+        { workspaceId: workspace.id, mode, query: text },
+        { realtime: realtime.client, onProgress },
+      );
       if (requestId !== requestRef.current) return;
       setPreview(result);
       setTitle(result.draft.title);
@@ -64,17 +83,21 @@ export function AddWidgetDialog({ workspace, mode, onCreated, onClose }) {
     setError('');
     setPhase('saving');
     try {
-      const widget = await createWidget(token, {
-        workspaceId: workspace.id,
-        mode,
-        query: draft.query,
-        title: title.trim() || draft.title,
-        commandTemplate: draft.commandTemplate,
-        steps: draft.steps,
-        period: draft.period,
-        chartSpec: draft.chartSpec,
-        chartHtml: draft.chartHtml,
-      });
+      const widget = await createWidget(
+        token,
+        {
+          workspaceId: workspace.id,
+          mode,
+          query: draft.query,
+          title: title.trim() || draft.title,
+          commandTemplate: draft.commandTemplate,
+          steps: draft.steps,
+          period: draft.period,
+          chartSpec: draft.chartSpec,
+          chartHtml: draft.chartHtml,
+        },
+        { realtime: realtime.client },
+      );
       onCreated(widget);
     } catch (err) {
       setError(err.message || 'The graph could not be saved.');
@@ -144,10 +167,31 @@ export function AddWidgetDialog({ workspace, mode, onCreated, onClose }) {
 
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           {phase === 'generating' && (
-            <p className="text-sm text-gray-500 dark:text-gray-400" role="status">
-              Working out the command, running it and drawing the graph. This can take a minute or
-              two…
-            </p>
+            <div role="status" aria-live="polite">
+              <div className="flex items-center gap-2">
+                <LogoTracer className="h-5 w-7" />
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Working out the command, running it and drawing the graph. This can take a minute
+                  or two…
+                </p>
+              </div>
+              {steps.length > 0 && (
+                <ol className="mt-2 space-y-1 rounded-lg bg-gray-50 p-3 font-mono text-xs dark:bg-gray-950">
+                  {steps.map((step, i) => (
+                    <li
+                      key={step.key}
+                      className={`break-words ${
+                        i === steps.length - 1
+                          ? 'text-gray-700 dark:text-gray-200'
+                          : 'text-gray-400 dark:text-gray-500'
+                      }`}
+                    >
+                      {step.text}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
           )}
 
           <div className="flex justify-end gap-2 pt-2">

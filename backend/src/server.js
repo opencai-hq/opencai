@@ -6,9 +6,15 @@ try {
   process.exit(1);
 }
 
+const http = require('node:http');
 const app = require('./app');
+const { attachSocketServer } = require('./realtime/socketServer');
 
-app.listen(config.port, () => {
+// One server for the HTTP API and the Operator WebSocket (/api/ws).
+const server = http.createServer(app);
+attachSocketServer(server);
+
+server.listen(config.port, () => {
   console.log(`[backend] listening on http://localhost:${config.port}`);
 });
 

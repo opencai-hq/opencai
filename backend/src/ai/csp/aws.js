@@ -82,6 +82,7 @@ const promptRules = [
   'To check syntax, use run_lookup with "aws <service> <operation> help" (this AWS CLI does not accept --help).',
   'To run the same read-only command in several AWS regions, call the tool once with the "regions" argument (a list of region names, or ["all"] for every enabled region) instead of making one call per region. Leave --region out of that command.',
   'Global services — Cost Explorer (ce), IAM, Organizations, Route 53, and listing S3 buckets — return the same data in every region. Run them once, without "regions" (use --region us-east-1 for Cost Explorer).',
+  'Cost Explorer: the End date is exclusive (to include today, End is tomorrow), and it only has data for the last 14 months.',
   'If no AWS region is configured and you cannot tell which one the Operator means, ask them.',
 ];
 

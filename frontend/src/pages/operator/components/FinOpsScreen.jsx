@@ -43,7 +43,7 @@ const SUB_MODES = [
   },
 ];
 
-export function FinOpsScreen({ subMode, onSelectSubMode, messages, onSend, onConfirm, onCancel, sending }) {
+export function FinOpsScreen({ subMode, onSelectSubMode, messages, onSend, onConfirm, onCancel, sending, liveStatus }) {
   const active = SUB_MODES.find((m) => m.key === subMode);
   // Once a conversation starts, the intro and agent picker give way to it.
   const started = messages.length > 0;
@@ -100,6 +100,7 @@ export function FinOpsScreen({ subMode, onSelectSubMode, messages, onSend, onCon
             onConfirm={onConfirm}
             onCancel={onCancel}
             sending={sending}
+            liveStatus={liveStatus}
           />
         )}
       </div>

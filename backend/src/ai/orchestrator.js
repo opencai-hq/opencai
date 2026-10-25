@@ -23,6 +23,7 @@ const { CHAT_MESSAGE_STATUS } = require('../constants/chatMessageStatus');
 const { AUDIT_ACTIONS, AUDIT_OUTCOMES } = require('../constants/auditActions');
 const { MAX_MODEL_TURNS_PER_MESSAGE, MAX_ORCHESTRATION_WALL_CLOCK_MS } = require('./constants');
 const { getPersona } = require('./systemPrompt.service');
+const { currentDateRule } = require('./prompts/currentDate');
 const { classify } = require('./policy/commandPolicy');
 const { POLICY_VERDICTS } = require('./policy/policyVerdicts');
 const { combineOutput } = require('./sanitizer');
@@ -31,6 +32,7 @@ const { provisionSandbox, executeInSandbox, destroySandbox } = require('./sandbo
 const { contextWindowFor } = require('./contextWindows');
 const { DEFAULT_REQUEST_LIMITS } = require('./settingsDefaults');
 const { resolveProviderConfig } = require('./providerConfig');
+const { emitProgress, emitStatus } = require('../realtime/progress');
 const {
   TOOL_CALL_RULES,
   providerRulesFor,
@@ -61,11 +63,11 @@ const KIND = Object.freeze({
 });
 
 /**
- * The full system prompt for one Workspace: the persona, the tool rules, and
- * the provider's own CLI rules.
+ * The full system prompt for one Workspace: the persona, the tool rules, the
+ * provider's own CLI rules, and today's date.
  */
 function systemPromptFor(persona, csp) {
-  return `${persona.systemPrompt}\n\n${TOOL_CALL_RULES}\n${providerRulesFor(csp)}`;
+  return `${persona.systemPrompt}\n\n${TOOL_CALL_RULES}\n${providerRulesFor(csp)}\n${currentDateRule()}`;
 }
 
 const SANDBOX_UNAVAILABLE_TEXT = "The execution environment couldn't be started. Please try again.";
@@ -284,10 +286,16 @@ async function recordContextUsage(session, providerConfig, lastUsage) {
   return { tokens, window };
 }
 
-async function createMessage(createdMessages, data) {
-  const row = await prisma.chatMessage.create({ data });
+// Every row a turn returns goes through here, so the Operator's socket sees
+// it the moment it is saved (see realtime/progress.js).
+function addRow(createdMessages, row) {
   createdMessages.push(row);
+  emitProgress({ kind: 'message', message: row });
   return row;
+}
+
+async function createMessage(createdMessages, data) {
+  return addRow(createdMessages, await prisma.chatMessage.create({ data }));
 }
 
 function createAssistantText(createdMessages, sessionId, content) {
@@ -397,6 +405,7 @@ async function runModelLoop({
     );
 
     let providerResult;
+    emitStatus('Asking the AI', { thinking: true });
     try {
       providerResult = await providerConfig.provider.sendMessage({
         systemPrompt,
@@ -504,6 +513,7 @@ async function runModelLoop({
 
     // 3a. Read-only across several regions: one step, run in parallel.
     if (isReadOnly && requestedRegions) {
+      emitStatus(`Running ${commandText}`, { command: commandText });
       const fanout = await runAcrossRegions(containerId, result.argv, requestedRegions, {
         env,
         timeoutSeconds: providerConfig.sandboxCommandTimeoutSeconds,
@@ -543,6 +553,7 @@ async function runModelLoop({
 
     // 3b. Lookup or read-only -- safe to run without a human in the loop.
     if (isReadOnly) {
+      emitStatus(`Running ${commandText}`, { command: commandText });
       const execution = await executeInSandbox(containerId, result.argv, {
         env,
         timeoutSeconds: providerConfig.sandboxCommandTimeoutSeconds,
@@ -628,6 +639,7 @@ async function runModelLoop({
     // confirmation flow, so the Operator still gets a result row either way.
     if (result.dryRunCapable && !result.argv.includes('--dry-run')) {
       let dryRunOutput;
+      emitStatus('Previewing the change with --dry-run');
       try {
         const dryRun = await executeInSandbox(containerId, [...result.argv, '--dry-run'], {
           env,
@@ -693,6 +705,7 @@ async function handleUserMessage({ session, workspace, credential, userId, text 
 
   let containerId;
   let created;
+  emitStatus('Starting the environment');
   try {
     ({ containerId, created } = await provisionSandbox(session, {
       idleTimeoutMinutes: providerConfig.sandboxIdleTimeoutMinutes,
@@ -708,6 +721,7 @@ async function handleUserMessage({ session, workspace, credential, userId, text 
   }
 
   let env;
+  emitStatus(`Signing in to ${csp.label}`);
   try {
     env = await signInSandbox({
       session,
@@ -794,7 +808,7 @@ async function confirmCommand({ session, workspace, credential, messageId, userI
       where: { id: messageId },
       data: { status: CHAT_MESSAGE_STATUS.FAILED },
     });
-    createdMessages.push(failed);
+    addRow(createdMessages, failed);
 
     await createAssistantText(
       createdMessages,
@@ -844,7 +858,7 @@ async function confirmCommand({ session, workspace, credential, messageId, userI
         where: { id: messageId },
         data: { status: CHAT_MESSAGE_STATUS.CAPPED },
       });
-      createdMessages.push(capped);
+      addRow(createdMessages, capped);
 
       await createAssistantText(
         createdMessages,
@@ -870,11 +884,13 @@ async function confirmCommand({ session, workspace, credential, messageId, userI
     session.mutatingCommandCount += 1;
 
     const csp = getCsp(workspace.csp);
+    emitStatus('Starting the environment');
     const sandbox = await provisionSandbox(session, {
       idleTimeoutMinutes: providerConfig.sandboxIdleTimeoutMinutes,
       image: csp.sandboxImage,
     });
     containerId = sandbox.containerId;
+    emitStatus(`Signing in to ${csp.label}`);
     env = await signInSandbox({
       session,
       csp,
@@ -885,6 +901,7 @@ async function confirmCommand({ session, workspace, credential, messageId, userI
     });
 
     // argv, as an array. Never a shell string.
+    emitStatus(`Running ${result.argv.join(' ')}`, { command: result.argv.join(' ') });
     execution = await executeInSandbox(containerId, result.argv, {
       env,
       timeoutSeconds: providerConfig.sandboxCommandTimeoutSeconds,
@@ -898,7 +915,7 @@ async function confirmCommand({ session, workspace, credential, messageId, userI
       where: { id: messageId },
       data: { status: CHAT_MESSAGE_STATUS.FAILED },
     });
-    createdMessages.push(failed);
+    addRow(createdMessages, failed);
 
     await createAssistantText(
       createdMessages,
@@ -925,7 +942,7 @@ async function confirmCommand({ session, workspace, credential, messageId, userI
     where: { id: messageId },
     data: { status: finalStatus },
   });
-  createdMessages.push(updated);
+  addRow(createdMessages, updated);
 
   const resultRow = await createMessage(createdMessages, {
     sessionId: session.id,
@@ -998,7 +1015,7 @@ async function cancelCommand({ session, workspace, messageId, userId }) {
   }
 
   const message = await prisma.chatMessage.findUnique({ where: { id: messageId } });
-  createdMessages.push(message);
+  addRow(createdMessages, message);
 
   await createAssistantText(createdMessages, session.id, 'Command cancelled.');
 
