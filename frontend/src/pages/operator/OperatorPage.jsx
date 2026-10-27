@@ -361,6 +361,8 @@ export function OperatorPage() {
   }
 
   const messages = currentSession ? messagesBySession[currentSession.id] || [] : [];
+  const showToggle = cloudOrOnPrem === 'cloud' && workspace && !editingWorkspace;
+  const showChatBar = showToggle && view !== 'dashboard';
 
   return (
     // Full-height shell: the sidebar and the chat section scroll independently.
@@ -378,19 +380,29 @@ export function OperatorPage() {
           activeSessionId={currentSession?.id}
           onRenameSession={handleRenameSession}
         />
-        {/* The toggle sits level with the main area's first line (the agent greeting,
-            the session header or the dashboard title), clear of the scrollbar. In an
-            open chat, New Session sits right beside it. */}
         <div className="relative flex min-h-0 flex-1 flex-col">
-          {cloudOrOnPrem === 'cloud' && workspace && !editingWorkspace && (
-            <div className="absolute right-6 top-10 z-10 flex items-center gap-3">
-              {view !== 'dashboard' && currentSession && (
-                <NewSessionButton onClick={handleNewSession} />
-              )}
+          {/* On the dashboard the switch sits level with the dashboard title,
+              clear of the scrollbar. */}
+          {showToggle && view === 'dashboard' && (
+            <div className="absolute right-6 top-10 z-10">
               <ViewToggle view={view} onChange={handleChangeView} />
             </div>
           )}
-          <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pt-10">
+          <main
+            className={`flex min-h-0 flex-1 flex-col overflow-y-auto px-6 ${showChatBar ? '' : 'pt-10'}`}
+          >
+            {/* In chat, a solid bar the conversation scrolls under: the open chat's
+                session chip on the left, New Session and the Chat/Dashboard switch
+                on the right. Nothing floats over the messages. */}
+            {showChatBar && (
+              <div className="sticky top-0 z-10 -mx-6 mb-6 flex items-center gap-3 bg-gray-50 px-6 pb-3 pt-6 dark:bg-gray-950">
+                <div className="min-w-0 flex-1">
+                  {currentSession && <ChatSessionHeader session={currentSession} />}
+                </div>
+                {currentSession && <NewSessionButton onClick={handleNewSession} />}
+                <ViewToggle view={view} onChange={handleChangeView} />
+              </div>
+            )}
             {cloudOrOnPrem === 'onprem' ? (
               <div className="flex flex-1 items-center justify-center pb-10 text-gray-400">
                 On-Prem support is coming soon.
@@ -414,12 +426,6 @@ export function OperatorPage() {
               </Suspense>
             ) : (
               <>
-                {currentSession && (
-                  // Wide right padding keeps the session chip clear of New Session + the toggle.
-                  <div className="mx-auto mb-6 w-full max-w-7xl pr-60">
-                    <ChatSessionHeader session={currentSession} />
-                  </div>
-                )}
                 {activeMode === 'CLOUDOPS' ? (
                   <CloudOpsScreen
                     workspace={workspace}
