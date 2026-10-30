@@ -14,6 +14,7 @@ names its source files in its footer.
 | [5.1. How a command runs in the sandbox](05-1-command-execution.png) | Container creation and reuse, per-run credentials, `docker exec`, output handling and removal |
 | [6. Setting up OpenCAI locally](06-local-setup.png) | From a fresh clone to an Operator chatting, with or without Docker for everything |
 | [7. Signing in](07-sign-in-and-mfa.png) | Password, MFA enrolment and verification, backup codes |
+| [7.1. How MFA works](07-1-mfa.png) | Secret generation, encrypted storage, authenticator and backup-code checks, rate limits, reset |
 | [8. Releasing a version](08-release.png) | CI, the `dev` → `release` flow, semantic-release and image publishing |
 
 ![System overview](01-system-overview.png)
@@ -33,6 +34,8 @@ names its source files in its footer.
 ![Setting up OpenCAI locally](06-local-setup.png)
 
 ![Signing in](07-sign-in-and-mfa.png)
+
+![How MFA works](07-1-mfa.png)
 
 ![Releasing a version](08-release.png)
 

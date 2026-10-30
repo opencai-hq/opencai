@@ -731,6 +731,87 @@ function anchors(x, y, w, h) {
   const oper = d.box(X + W - 160, 1060, 170, 44, ['Operator console'], { kind: 'terminal' });
   d.arrow([[CX - 30, p3.y + p3.h], [CX - 30, 1024], [admin.cx, 1024], admin.t], { label: 'ADMIN', labelAt: [admin.cx - 10, 1016], anchor: 'end' });
   d.arrow([[CX + 30, p3.y + p3.h], [CX + 30, 1024], [oper.cx, 1024], oper.t], { label: 'OPERATOR', labelAt: [oper.cx + 10, 1016], anchor: 'start' });
+  d.note(760, 524, ['MFA in detail — Fig. 7.1']);
+  d.save();
+}
+
+/* -------------------------------------------------------------------------- */
+/* Fig. 7.1 — How MFA works                                                    */
+/* -------------------------------------------------------------------------- */
+{
+  const d = new Diagram({
+    file: '07-1-mfa',
+    width: 1180,
+    height: 1780,
+    fig: '7.1',
+    title: 'How MFA works',
+    subtitle: 'A secret is shared once with the authenticator app; every sign-in proves possession of it — or spends a backup code.',
+    source: 'backend/src — modules/auth/auth.service.js, crypto/envelope.js, middleware/rateLimit.js, modules/admin/mfa.js',
+  });
+
+  const X = 330;
+  const W = 400;
+  const CX = X + W / 2;
+
+  d.frame(30, 130, 760, 776, 'ONCE · ENROLMENT · /api/auth/mfa/enroll/start, /confirm');
+  const a0 = d.box(X, 170, W, 44, ['Password accepted · no secret on file'], { kind: 'terminal' });
+  const a1 = d.box(X, 250, W, 62, ['Check the mfa-pending token', 'right purpose · under 10 minutes old · same sessionVersion']);
+  d.arrow([a0.b, a1.t]);
+  const enrolled = d.box(50, 250, 210, 62, ['Already enrolled', '409 — sign in with a code'], { kind: 'stop' });
+  d.arrow([a1.l, enrolled.r], { accent: true, label: 'enrolled', labelAt: [295, a1.cy - 8] });
+  const a2 = d.box(X, 348, W, 78, ['Generate a secret', { t: 'otplib.generateSecret({ length: 20 })', style: 'mono' }, 'otpauth:// URI with issuer and username → QR code']);
+  d.arrow([a1.b, a2.t]);
+  const a3 = d.box(X, 462, W, 78, ['Hand back an enrolment token', 'signed JWT holding the secret · mfa-enroll · 10 min', 'nothing is written to the database yet']);
+  d.arrow([a2.b, a3.t]);
+
+  const app = d.box(830, 348, 300, 94, ['Authenticator app', 'scans the QR and keeps the secret', 'secret + clock → a 6-digit code', 'a new code every 30 seconds']);
+  d.arrow([a2.r, [app.x, a2.cy]], { label: 'QR code', labelAt: [780, a2.cy - 8] });
+
+  const q1 = d.diamond(CX, 620, 240, 86, ['First code', 'valid?']);
+  d.arrow([a3.b, q1.t]);
+  d.arrow([[980, app.y + app.h], [980, q1.cy], q1.r], { dashed: true, label: 'code typed in', labelAt: [660, q1.cy - 8], anchor: 'start' });
+  const retry = d.box(50, 589, 210, 62, ['Invalid code', 'try again with the next one'], { kind: 'stop' });
+  d.arrow([q1.l, retry.r], { accent: true, label: 'no', labelAt: [335, q1.cy - 8] });
+
+  const a4 = d.box(X, 706, W, 78, ['Save the secret and backup codes', 'secret: envelope-encrypted, AES-256-GCM', { t: '10 backup codes XXXXX-XXXXX · bcrypt-hashed', style: 'detail' }]);
+  d.arrow([q1.b, a4.t], { label: 'yes', labelAt: [CX + 10, 690], anchor: 'start' });
+  const store = d.box(830, 690, 230, 110, ['PostgreSQL · users', { t: 'totpSecretEncrypted', style: 'mono' }, { t: 'backupCodesHashed[]', style: 'mono' }, { t: 'sessionVersion', style: 'mono' }], { kind: 'store' });
+  d.arrow([a4.r, [store.x, a4.cy]], { label: 'write', labelAt: [780, a4.cy - 8] });
+  const a5 = d.box(X, 820, W, 62, ['Signed in', 'session token · backup codes shown once, never again'], { kind: 'outcome' });
+  d.arrow([a4.b, a5.t]);
+
+  d.frame(30, 930, 760, 760, 'EVERY SIGN-IN · /api/auth/mfa/verify');
+  const b0 = d.box(X, 966, W, 44, ['Password accepted · already enrolled'], { kind: 'terminal' });
+  d.note(50, 985, ['mfa-pending token — Fig. 7']);
+  const b1 = d.box(X, 1046, W, 62, ['Rate limit', '20 attempts per mfa-pending token in 15 minutes']);
+  d.arrow([b0.b, b1.t]);
+  const limited = d.box(50, 1046, 210, 62, ['Too many attempts', '429 — sign in again later'], { kind: 'stop' });
+  d.arrow([b1.l, limited.r], { accent: true, label: 'over', labelAt: [295, b1.cy - 8] });
+  const b2 = d.box(X, 1144, W, 62, ['Check the mfa-pending token', 'right purpose · under 10 minutes old · same sessionVersion']);
+  d.arrow([b1.b, b2.t]);
+  const stale = d.box(50, 1144, 210, 62, ['Token rejected', '401 — sign in again'], { kind: 'stop' });
+  d.arrow([b2.l, stale.r], { accent: true, label: 'stale', labelAt: [295, b2.cy - 8] });
+  const b3 = d.box(X, 1242, W, 62, ['Decrypt the secret', 'unwrap the data key with MASTER_ENCRYPTION_KEY']);
+  d.arrow([b2.b, b3.t]);
+  d.arrow([[945, store.y + store.h], [945, b3.cy], b3.r], { label: 'read', labelAt: [955, 1060], anchor: 'start' });
+
+  const q2 = d.diamond(CX, 1390, 240, 90, ['Authenticator', 'code matches?']);
+  d.arrow([b3.b, q2.t]);
+  d.arrow([[1100, app.y + app.h], [1100, q2.cy], q2.r], { dashed: true, label: 'code typed in', labelAt: [870, q2.cy - 8] });
+  d.note(810, 1428, ['the current 30-second step,', 'or the one either side']);
+
+  const q3 = d.diamond(150, 1500, 180, 86, ['One of the', 'backup codes?']);
+  d.arrow([q2.l, [q3.cx, q2.cy], q3.t], { label: 'no', labelAt: [290, q2.cy - 8] });
+  const burn = d.box(300, 1469, 200, 62, ['Delete its hash', 'each code works only once']);
+  d.arrow([q3.r, burn.l], { label: 'yes', labelAt: [270, q3.cy - 8] });
+  const invalid = d.box(50, 1600, 200, 62, ['Invalid code', '401 · try the next code'], { kind: 'stop' });
+  d.arrow([q3.b, invalid.t], { accent: true, label: 'no', labelAt: [q3.cx + 10, 1578], anchor: 'start' });
+
+  const done = d.box(X, 1600, W, 62, ['Signed in', 'session token · 12 hours · tied to sessionVersion'], { kind: 'outcome' });
+  d.arrow([q2.b, [CX, done.y]], { label: 'yes', labelAt: [CX + 10, 1520], anchor: 'start' });
+  d.arrow([burn.b, [burn.cx, done.y]]);
+
+  d.note(810, 1520, ['An admin MFA reset clears the secret', 'and the backup codes: the next', 'sign-in starts again at enrolment.']);
   d.save();
 }
 
