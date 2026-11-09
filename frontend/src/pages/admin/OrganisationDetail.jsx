@@ -13,7 +13,7 @@ import { useToast } from '../../lib/ToastContext';
 import { ConfirmDialog, Field, FormDialog } from '../../components/Dialog';
 import { OrganisationDialog } from './ManageOrganisations';
 import { AdminLayout } from './AdminLayout';
-import { CSPS, CSP_OPTIONS, cspLabel } from '../../lib/csp';
+import { CSPS, CSP_OPTIONS, CSP_OPTIONS_BY_KIND, accountLabel, cspLabel } from '../../lib/csp';
 
 const workspaceLabel = (ws) => `${cspLabel(ws.csp)} · ${ws.account} · ${ws.environment}`;
 
@@ -35,23 +35,32 @@ function WorkspaceDialog({ workspace, busy, onSubmit, onClose }) {
       {!workspace && (
         <label className="block">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-            Cloud Provider
+            Provider
           </span>
           <select
             value={csp}
             onChange={(e) => setCsp(e.target.value)}
             className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
           >
-            {CSP_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {cspLabel(option)}
-              </option>
-            ))}
+            <optgroup label="Cloud">
+              {CSP_OPTIONS_BY_KIND.cloud.map((option) => (
+                <option key={option} value={option}>
+                  {cspLabel(option)}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="On-Prem">
+              {CSP_OPTIONS_BY_KIND.onprem.map((option) => (
+                <option key={option} value={option}>
+                  {cspLabel(option)}
+                </option>
+              ))}
+            </optgroup>
           </select>
         </label>
       )}
       <Field
-        label="Account"
+        label={accountLabel(workspace?.csp ?? csp)}
         required
         value={account}
         onChange={(e) => setAccount(e.target.value)}
@@ -66,18 +75,96 @@ function WorkspaceDialog({ workspace, busy, onSubmit, onClose }) {
   );
 }
 
-/** The credential fields are the Workspace's cloud provider's own (see lib/csp.js). */
+const emptyHost = () => ({ name: '', address: '', port: '' });
+const INPUT_CLASS =
+  'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100';
+
+const Help = ({ children }) =>
+  children ? <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{children}</p> : null;
+
+/** Repeatable name / address / port rows, with at least one row kept. */
+function HostList({ label, hosts, onChange }) {
+  const update = (index, key) => (e) =>
+    onChange(hosts.map((host, i) => (i === index ? { ...host, [key]: e.target.value } : host)));
+  return (
+    <fieldset>
+      <legend className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</legend>
+      <div className="mt-1 space-y-2">
+        {hosts.map((host, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <input
+              aria-label={`Server ${index + 1} name`}
+              placeholder="Name"
+              value={host.name}
+              onChange={update(index, 'name')}
+              autoComplete="off"
+              className={INPUT_CLASS}
+            />
+            <input
+              aria-label={`Server ${index + 1} address`}
+              placeholder="Address"
+              value={host.address}
+              onChange={update(index, 'address')}
+              autoComplete="off"
+              className={INPUT_CLASS}
+            />
+            <input
+              aria-label={`Server ${index + 1} port`}
+              placeholder="22"
+              inputMode="numeric"
+              value={host.port}
+              onChange={update(index, 'port')}
+              autoComplete="off"
+              className={`${INPUT_CLASS} w-20 shrink-0`}
+            />
+            <button
+              type="button"
+              disabled={hosts.length <= 1}
+              onClick={() => onChange(hosts.filter((_, i) => i !== index))}
+              className="shrink-0 text-sm font-medium text-red-600 hover:underline disabled:no-underline disabled:opacity-40"
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange([...hosts, emptyHost()])}
+        className="mt-2 text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
+      >
+        + Add server
+      </button>
+    </fieldset>
+  );
+}
+
+/** The credential fields are the Workspace's provider's own (see lib/csp.js). */
 function CredentialDialog({ workspace, busy, onSubmit, onClose }) {
   const fields = CSPS[workspace.csp]?.credentialFields ?? [];
   const [values, setValues] = useState({});
-  const set = (name) => (e) => setValues((current) => ({ ...current, [name]: e.target.value }));
+  const setValue = (name, value) => setValues((current) => ({ ...current, [name]: value }));
+  const set = (name) => (e) => setValue(name, e.target.value);
+  const hostsOf = (name) => values[name] ?? [emptyHost()];
   // Optional fields left blank are omitted, so the backend applies its default.
-  const body = () =>
-    Object.fromEntries(
-      fields
-        .map((field) => [field.name, (values[field.name] ?? '').trim()])
-        .filter(([, value]) => value !== ''),
-    );
+  const body = () => {
+    const out = {};
+    for (const field of fields) {
+      const value = values[field.name];
+      if (field.type === 'checkbox') {
+        out[field.name] = value === true;
+      } else if (field.type === 'hostList') {
+        out[field.name] = hostsOf(field.name)
+          .map((h) => ({ name: h.name.trim(), address: h.address.trim(), port: h.port.trim() }))
+          .filter((h) => h.name || h.address || h.port)
+          .map((h) => ({ ...h, port: h.port === '' ? 22 : Number(h.port) }));
+      } else {
+        const text = typeof value === 'string' ? value.trim() : '';
+        if (text !== '') out[field.name] = text;
+      }
+    }
+    return out;
+  };
   return (
     <FormDialog
       title={workspace.credential ? 'Replace credentials' : 'Attach credentials'}
@@ -90,34 +177,64 @@ function CredentialDialog({ workspace, busy, onSubmit, onClose }) {
         {workspaceLabel(workspace)}
         {workspace.credential && ' — the saved credentials will be overwritten.'}
       </p>
-      {fields.map((field) =>
-        field.multiline ? (
-          <label key={field.name} className="block">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-              {field.label}
-            </span>
-            <textarea
+      {fields.map((field) => {
+        if (field.type === 'checkbox') {
+          return (
+            <label key={field.name} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={values[field.name] === true}
+                onChange={(e) => setValue(field.name, e.target.checked)}
+              />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                {field.label}
+              </span>
+            </label>
+          );
+        }
+        if (field.type === 'hostList') {
+          return (
+            <HostList
+              key={field.name}
+              label={field.label}
+              hosts={hostsOf(field.name)}
+              onChange={(hosts) => setValue(field.name, hosts)}
+            />
+          );
+        }
+        if (field.multiline) {
+          return (
+            <label key={field.name} className="block">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                {field.label}
+              </span>
+              <textarea
+                required={!field.optional}
+                rows={6}
+                spellCheck={false}
+                autoComplete="off"
+                value={values[field.name] ?? ''}
+                onChange={set(field.name)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-xs focus:border-teal-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+              />
+              <Help>{field.help}</Help>
+            </label>
+          );
+        }
+        return (
+          <div key={field.name}>
+            <Field
+              label={field.label}
+              type={field.secret ? 'password' : 'text'}
               required={!field.optional}
-              rows={6}
-              spellCheck={false}
-              autoComplete="off"
+              autoComplete={field.secret ? 'new-password' : 'off'}
               value={values[field.name] ?? ''}
               onChange={set(field.name)}
-              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-xs focus:border-teal-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
             />
-          </label>
-        ) : (
-          <Field
-            key={field.name}
-            label={field.label}
-            type={field.secret ? 'password' : 'text'}
-            required={!field.optional}
-            autoComplete={field.secret ? 'new-password' : 'off'}
-            value={values[field.name] ?? ''}
-            onChange={set(field.name)}
-          />
-        ),
-      )}
+            <Help>{field.help}</Help>
+          </div>
+        );
+      })}
     </FormDialog>
   );
 }
