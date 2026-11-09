@@ -84,7 +84,7 @@ for (const command of READONLY) {
   });
 }
 
-for (const command of ['govc vm.info -h', 'govc help']) {
+for (const command of ['govc vm.info -h', 'govc help', 'govc -h', 'govc help vm.info', 'govc vm.destroy -h']) {
   test(`lookup: ${command}`, () => {
     const result = classify(command);
     assert.equal(result.kind, 'lookup');
@@ -133,5 +133,41 @@ const REJECTED = [
 for (const command of REJECTED) {
   test(`rejected: ${command}`, () => {
     assert.ok(classify(command).reject);
+  });
+}
+
+// "-h" can be another flag's value, so these are classified as normal commands.
+test('-h as a flag value is not lookup', () => {
+  assert.equal(classify('govc vm.change -vm web-01 -annotation -h').kind, 'mutating');
+  assert.equal(classify('govc vm.change -vm web-01 -name -h').kind, 'mutating');
+  assert.ok(classify('govc guest.run -vm x -C -h rm -rf /tmp').reject);
+  assert.equal(classify('govc vm.destroy web-01 -h').kind, 'mutating');
+  assert.ok(classify('govc help vm.info extra').reject);
+});
+
+const BLOCKED = [
+  '-u https://evil.example/sdk',
+  '--u=https://evil.example/sdk',
+  '-k',
+  '-k=true',
+  '--k',
+  '-cert=/x',
+  '-key /x',
+  '-cacert /x',
+  '--tls-ca-certs=/x',
+  '-tls-known-hosts /x',
+  '-trace',
+  '--trace=true',
+  '-verbose',
+  '-debug',
+  '-persist-session=false',
+  '-vim-namespace x',
+  '--vim-version=1',
+];
+
+for (const flags of BLOCKED) {
+  test(`rejected flag: govc about ${flags}`, () => {
+    assert.ok(classify(`govc about ${flags}`).reject);
+    assert.ok(classify(`govc vm.power -off ${flags}`).reject);
   });
 }

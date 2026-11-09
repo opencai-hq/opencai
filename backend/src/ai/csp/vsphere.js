@@ -5,6 +5,8 @@ const { matchesVerb } = require('./grammar');
 const {
   REJECTED_EXACT,
   REJECTED_PREFIXES,
+  BLOCKED_FLAGS,
+  BLOCKED_FLAG_PREFIXES,
   READONLY_EXACT,
   READONLY_SUFFIXES,
   MUTATING_EXACT,
@@ -57,8 +59,25 @@ async function buildEnv(credential) {
 function classifyOperation(argv) {
   const command = argv[1];
 
-  if (argv.includes('-h') || command === 'help') {
-    const verb = command && !command.startsWith('-') ? command : null;
+  // Global client flags can redirect or expose the credential, whatever the
+  // command is, so they are refused before any verdict.
+  const blockedFlag = argv.slice(1).find((arg) => {
+    const m = /^--?([^=]+)/.exec(arg);
+    if (!m) return false;
+    return BLOCKED_FLAGS.includes(m[1]) || BLOCKED_FLAG_PREFIXES.some((p) => m[1].startsWith(p));
+  });
+  if (blockedFlag) {
+    return { reject: `The option "${blockedFlag}" is not available in this environment` };
+  }
+
+  // Go's flag parser can take "-h" as another flag's value, so only these exact
+  // shapes are help: `-h`, `<cmd> -h`, `help`, `help <cmd>`.
+  const isHelp =
+    (argv.length === 2 && command === '-h') ||
+    (argv.length === 3 && argv[2] === '-h' && !command.startsWith('-')) ||
+    (command === 'help' && argv.length <= 3);
+  if (isHelp) {
+    const verb = argv[1] === 'help' ? (argv[2] ?? null) : command === '-h' ? null : command;
     return { kind: 'lookup', verb, dryRunCapable: false };
   }
 

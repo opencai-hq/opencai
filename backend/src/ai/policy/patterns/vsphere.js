@@ -13,6 +13,22 @@ const REJECTED_PREFIXES = [
   'export.',
 ];
 
+// Global client flags that redirect, weaken or log the authenticated session.
+const BLOCKED_FLAGS = [
+  'u',
+  'k',
+  'cert',
+  'key',
+  'cacert',
+  'tls-ca-certs',
+  'tls-known-hosts',
+  'trace',
+  'verbose',
+  'debug',
+  'persist-session',
+];
+const BLOCKED_FLAG_PREFIXES = ['vim-'];
+
 const READONLY_EXACT = [
   'about',
   'ls',
@@ -51,6 +67,8 @@ const MUTATING_SUFFIXES = ['.rm', '.create', '.add'];
 module.exports = {
   REJECTED_EXACT,
   REJECTED_PREFIXES,
+  BLOCKED_FLAGS,
+  BLOCKED_FLAG_PREFIXES,
   READONLY_EXACT,
   READONLY_SUFFIXES,
   MUTATING_EXACT,
