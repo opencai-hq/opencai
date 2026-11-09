@@ -536,3 +536,19 @@ test('live progress: each command is reported as it runs, and chain items by ste
   assert.match(statuses[0], /^Running aws ec2 describe-instances/);
   assert.deepEqual(statuses.slice(1), ['Step 2 of 2: item 1 of 2', 'Step 2 of 2: item 2 of 2']);
 });
+
+test('provider hooks: the dashboard exec uses the transformed argv, the audit keeps the plain one', async () => {
+  reset();
+  const provider = require('../csp').getCsp('AWS');
+  provider.toExecArgv = (argv) => [...argv, 'X'];
+  try {
+    S.execResults.push(ok(COST_OUTPUT));
+    const result = await run();
+    assert.equal(result.ok, true);
+    assert.equal(S.execCalls[0].argv.at(-1), 'X');
+    assert.notEqual(result.argv.at(-1), 'X');
+    assert.deepEqual(S.execCalls[0].argv.slice(0, -1), result.argv);
+  } finally {
+    delete provider.toExecArgv;
+  }
+});

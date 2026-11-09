@@ -22,6 +22,7 @@ const { sanitizeOutput } = require('../sanitizer');
 const { allowedBinariesForMode } = require('../systemPrompt.service');
 const { executeInSandbox } = require('../sandbox/sandboxManager');
 const pool = require('../sandbox/dashboardSandboxPool');
+const { policyContextFor, execArgvFor } = require('../csp');
 const { withUserSlot } = require('./runLimiter');
 const { emitStatus } = require('../../realtime/progress');
 const { resolvePeriod } = require('./period');
@@ -75,7 +76,10 @@ async function execInDashboardSandbox({
           credentialUpdatedAt,
           timeoutSeconds,
         });
-        return await executeInSandbox(containerId, argv, { env, timeoutSeconds });
+        return await executeInSandbox(containerId, execArgvFor(workspace.csp, argv), {
+          env,
+          timeoutSeconds,
+        });
       } catch (err) {
         if (err instanceof AppError) throw err;
         await pool.release(userId, workspace.id);
@@ -126,6 +130,7 @@ async function runCommand({
     csp: workspace.csp,
     commandString: rendered,
     personaAllowedBinaries: await allowedBinariesForMode(mode),
+    cspContext: policyContextFor(workspace.csp, credential),
   });
 
   if (verdict.verdict !== POLICY_VERDICTS.ALLOW_READONLY) {

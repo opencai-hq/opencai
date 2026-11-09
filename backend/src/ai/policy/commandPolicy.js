@@ -34,12 +34,13 @@ function reject(reason, argv = [], binary = null) {
  * not influence classification today. The only persona-derived input that
  * matters here is `personaAllowedBinaries`, already resolved by the caller.
  * `csp` is the Workspace's cloud provider (a `CSP` value): it fixes the one
- * binary that may run and the grammar its commands are read with.
+ * binary that may run and the grammar its commands are read with. `cspContext`
+ * is provider-specific data (from `policyContextFor`) handed to its grammar.
  *
  * @returns {{ verdict: string, reason: string|null, dryRunCapable: boolean,
  *             argv: string[], binary: string|null, verb: string|null }}
  */
-function classify({ mode, subMode, csp, commandString, personaAllowedBinaries }) {
+function classify({ mode, subMode, csp, commandString, personaAllowedBinaries, cspContext }) {
   void mode;
   void subMode;
 
@@ -101,7 +102,7 @@ function classify({ mode, subMode, csp, commandString, personaAllowedBinaries })
   //    anything it does not positively recognise as help, read-only or
   //    mutating comes back as a rejection -- never assumed safe. This is the
   //    single most important rule in this file.
-  const operation = provider.classifyOperation(argv);
+  const operation = provider.classifyOperation(argv, cspContext ?? {});
   if (operation.reject) {
     return reject(operation.reject, argv, binary);
   }

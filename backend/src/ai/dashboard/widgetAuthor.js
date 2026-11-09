@@ -34,7 +34,7 @@ const {
 const { classify } = require('../policy/commandPolicy');
 const { POLICY_VERDICTS } = require('../policy/policyVerdicts');
 const { combineOutput } = require('../sanitizer');
-const { getCsp } = require('../csp');
+const { getCsp, policyContextFor } = require('../csp');
 const { allowedBinariesForMode } = require('../systemPrompt.service');
 const { currentDateRule } = require('../prompts/currentDate');
 const { chartSpecSchema } = require('./chartSpec');
@@ -294,6 +294,7 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
       csp: workspace.csp,
       commandString: reply.command,
       personaAllowedBinaries: allowedBinaries,
+      cspContext: policyContextFor(workspace.csp, credential),
     });
     const commandText =
       verdict.argv.length > 0 ? verdict.argv.join(' ') : String(reply.command ?? '');

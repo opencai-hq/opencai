@@ -1972,3 +1972,88 @@ test('live progress: every saved row is reported once, in order, with status lin
   assert.match(events[runningAt].command, /describe-instances/);
   assert.equal(events.find((e) => e.text === 'Asking the AI').thinking, true);
 });
+
+/* -------------------------------------------------------------------------- */
+/* Provider hooks: policy context and exec argv                                */
+/* -------------------------------------------------------------------------- */
+
+// Stub provider hooks, installed on the real AWS module for one test. Both
+// hooks are read at call time, so this is the same seam a real provider uses.
+async function withStubHooks(fn) {
+  const provider = require('./csp').getCsp('AWS');
+  provider.toExecArgv = (argv) => [...argv, 'X'];
+  provider.policyContext = (credential) => ({ seenKey: credential.accessKeyId });
+  try {
+    await fn();
+  } finally {
+    delete provider.toExecArgv;
+    delete provider.policyContext;
+  }
+}
+
+test('hooks: a read-only command runs with the provider-transformed argv and classify gets cspContext', async () => {
+  reset();
+  await withStubHooks(async () => {
+    S.providerResponses = [
+      { type: 'command_request', content: 'aws ec2 describe-instances', command: 'x' },
+      { type: 'text', content: 'done' },
+    ];
+    S.classifyResults = [verdict({ verdict: POLICY_VERDICTS.ALLOW_READONLY })];
+
+    await handleUserMessage({
+      session: makeSession(),
+      workspace: WORKSPACE,
+      credential: CREDENTIAL,
+      userId: 'user-1',
+      text: 'list',
+    });
+
+    assert.deepEqual(S.execCalls[0].argv, ['aws', 'ec2', 'describe-instances', 'X']);
+    assert.deepEqual(S.classifyCalls[0].cspContext, { seenKey: 'AKIAEXAMPLE' });
+  });
+});
+
+test('hooks: a confirmed command runs with the transformed argv and re-classifies with the same cspContext', async () => {
+  reset();
+  await withStubHooks(async () => {
+    const pending = seedPendingCommand('sess-1', 'aws s3 rb s3://b');
+    S.classifyResults = [
+      verdict({
+        verdict: POLICY_VERDICTS.REQUIRE_CONFIRMATION,
+        argv: ['aws', 's3', 'rb', 's3://b'],
+      }),
+    ];
+    S.providerResponses = [{ type: 'text', content: 'ok' }];
+
+    await confirmCommand({
+      session: makeSession(),
+      workspace: WORKSPACE,
+      credential: CREDENTIAL,
+      messageId: pending.id,
+      userId: 'user-1',
+    });
+
+    assert.deepEqual(S.execCalls[0].argv, ['aws', 's3', 'rb', 's3://b', 'X']);
+    assert.deepEqual(S.classifyCalls[0].cspContext, { seenKey: 'AKIAEXAMPLE' });
+  });
+});
+
+test('hooks: without provider hooks the argv is passed through unchanged and cspContext is {}', async () => {
+  reset();
+  const pending = seedPendingCommand('sess-1', 'aws s3 rb s3://b');
+  S.classifyResults = [
+    verdict({ verdict: POLICY_VERDICTS.REQUIRE_CONFIRMATION, argv: ['aws', 's3', 'rb', 's3://b'] }),
+  ];
+  S.providerResponses = [{ type: 'text', content: 'ok' }];
+
+  await confirmCommand({
+    session: makeSession(),
+    workspace: WORKSPACE,
+    credential: CREDENTIAL,
+    messageId: pending.id,
+    userId: 'user-1',
+  });
+
+  assert.deepEqual(S.execCalls[0].argv, ['aws', 's3', 'rb', 's3://b']);
+  assert.deepEqual(S.classifyCalls[0].cspContext, {});
+});

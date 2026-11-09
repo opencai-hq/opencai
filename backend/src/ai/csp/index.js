@@ -20,4 +20,18 @@ function getCsp(name) {
   return csp;
 }
 
-module.exports = { getCsp };
+// What a provider's classifier needs to know about the Workspace beyond the
+// command itself (e.g. the hosts a credential covers). Providers that need none
+// do not define `policyContext`.
+function policyContextFor(cspName, credential) {
+  return getCsp(cspName).policyContext?.(credential) ?? {};
+}
+
+// The argv actually handed to the sandbox. A provider whose CLI runs the command
+// through a remote shell (SSH) defines `toExecArgv` to quote it; everything that
+// executes a policy-approved command MUST go through this.
+function execArgvFor(cspName, argv) {
+  return getCsp(cspName).toExecArgv?.(argv) ?? argv;
+}
+
+module.exports = { getCsp, policyContextFor, execArgvFor };

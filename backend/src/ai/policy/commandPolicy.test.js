@@ -391,3 +391,42 @@ test('is deterministic across repeated calls', () => {
   const second = run('aws ec2 describe-instances');
   assert.deepEqual(first, second);
 });
+
+// --- provider context ----------------------------------------------------------
+
+test('cspContext is accepted and does not change an AWS verdict', () => {
+  const without = run('aws ec2 describe-instances');
+  const withContext = classify({
+    mode: 'CSP',
+    subMode: 'AWS',
+    csp: 'AWS',
+    commandString: 'aws ec2 describe-instances',
+    personaAllowedBinaries: AWS_ONLY,
+    cspContext: { hosts: ['10.0.0.1'] },
+  });
+  assert.deepEqual(withContext, without);
+});
+
+test("cspContext reaches the provider's classifyOperation, defaulting to {}", () => {
+  const provider = require('../csp').getCsp('AWS');
+  const original = provider.classifyOperation;
+  const seen = [];
+  provider.classifyOperation = (argv, context) => {
+    seen.push(context);
+    return original(argv, context);
+  };
+  try {
+    const base = {
+      mode: 'CSP',
+      subMode: 'AWS',
+      csp: 'AWS',
+      commandString: 'aws ec2 describe-instances',
+      personaAllowedBinaries: AWS_ONLY,
+    };
+    classify({ ...base, cspContext: { hosts: ['h'] } });
+    classify(base);
+  } finally {
+    provider.classifyOperation = original;
+  }
+  assert.deepEqual(seen, [{ hosts: ['h'] }, {}]);
+});

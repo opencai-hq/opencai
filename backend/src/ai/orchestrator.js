@@ -27,7 +27,7 @@ const { currentDateRule } = require('./prompts/currentDate');
 const { classify } = require('./policy/commandPolicy');
 const { POLICY_VERDICTS } = require('./policy/policyVerdicts');
 const { combineOutput } = require('./sanitizer');
-const { getCsp } = require('./csp');
+const { getCsp, policyContextFor, execArgvFor } = require('./csp');
 const { provisionSandbox, executeInSandbox, destroySandbox } = require('./sandbox/sandboxManager');
 const { contextWindowFor } = require('./contextWindows');
 const { DEFAULT_REQUEST_LIMITS } = require('./settingsDefaults');
@@ -386,6 +386,7 @@ async function runModelLoop({
   persona,
   providerConfig,
   workspace,
+  credential,
   env,
   containerId,
   conversation,
@@ -452,6 +453,7 @@ async function runModelLoop({
       csp: workspace.csp,
       commandString: providerResult.command,
       personaAllowedBinaries: persona.allowedBinaries,
+      cspContext: policyContextFor(workspace.csp, credential),
     });
 
     // An explanation is its own ASSISTANT/TEXT row, persisted *before* the
@@ -554,10 +556,11 @@ async function runModelLoop({
     // 3b. Lookup or read-only -- safe to run without a human in the loop.
     if (isReadOnly) {
       emitStatus(`Running ${commandText}`, { command: commandText });
-      const execution = await executeInSandbox(containerId, result.argv, {
-        env,
-        timeoutSeconds: providerConfig.sandboxCommandTimeoutSeconds,
-      });
+      const execution = await executeInSandbox(
+        containerId,
+        execArgvFor(workspace.csp, result.argv),
+        { env, timeoutSeconds: providerConfig.sandboxCommandTimeoutSeconds },
+      );
       const output = combineOutput(execution);
       const outcome = executionOutcome(execution);
       const status =
@@ -748,6 +751,7 @@ async function handleUserMessage({ session, workspace, credential, userId, text 
     persona,
     providerConfig,
     workspace,
+    credential,
     env,
     containerId,
     conversation,
@@ -801,6 +805,7 @@ async function confirmCommand({ session, workspace, credential, messageId, userI
     csp: workspace.csp,
     commandString: message.content,
     personaAllowedBinaries: persona.allowedBinaries,
+    cspContext: policyContextFor(workspace.csp, credential),
   });
 
   if (result.verdict !== POLICY_VERDICTS.REQUIRE_CONFIRMATION) {
@@ -902,7 +907,7 @@ async function confirmCommand({ session, workspace, credential, messageId, userI
 
     // argv, as an array. Never a shell string.
     emitStatus(`Running ${result.argv.join(' ')}`, { command: result.argv.join(' ') });
-    execution = await executeInSandbox(containerId, result.argv, {
+    execution = await executeInSandbox(containerId, execArgvFor(workspace.csp, result.argv), {
       env,
       timeoutSeconds: providerConfig.sandboxCommandTimeoutSeconds,
     });
@@ -976,6 +981,7 @@ async function confirmCommand({ session, workspace, credential, messageId, userI
     persona,
     providerConfig,
     workspace,
+    credential,
     env,
     containerId,
     conversation,
