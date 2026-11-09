@@ -308,9 +308,10 @@ FinOps is not available for on-prem Workspaces; they get CloudOps only.
 - Account: a vSphere role limited to what you want the agent to do. Read-only for inventory;
   add power and snapshot privileges only if you want the agent to propose those changes (each
   needs Operator approval).
-- Not available: guest operations (`guest.*`) and datastore upload and download. Client connection
-  flags such as `-u`, `-k` and `-dc` overrides are blocked, so the agent cannot redirect the
-  connection or expose the credential.
+- Not available: guest operations (`guest.*`), datastore upload and download, and the sensitive
+  reads `license.*`, `sso.*`, `option.*` and `permissions.*`. The `-u`, `-k`, certificate,
+  trace/debug and session flags are blocked, so the agent cannot redirect the connection or expose
+  the credential; `-dc` is allowed to target another datacenter.
 
 ### Linux servers (SSH)
 
