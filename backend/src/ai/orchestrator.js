@@ -25,6 +25,7 @@ const { MAX_MODEL_TURNS_PER_MESSAGE, MAX_ORCHESTRATION_WALL_CLOCK_MS } = require
 const { getPersona } = require('./systemPrompt.service');
 const { currentDateRule } = require('./prompts/currentDate');
 const { classify } = require('./policy/commandPolicy');
+const { commandTextFromArgv } = require('./policy/commandText');
 const { POLICY_VERDICTS } = require('./policy/policyVerdicts');
 const { combineOutput } = require('./sanitizer');
 const { getCsp, policyContextFor, execArgvFor } = require('./csp');
@@ -313,10 +314,12 @@ function createAssistantText(createdMessages, sessionId, content) {
  * Always the classifier's tokenized argv -- never the model's raw string. The
  * raw string is used only when argv came back empty, which only happens on a
  * REJECTED verdict for genuinely unparseable input that will never execute.
+ * The text is re-parsed at confirm time, so words are quoted where needed to
+ * make it parse back to exactly this argv.
  */
 function commandTextFor(result, rawCommand) {
   if (Array.isArray(result.argv) && result.argv.length > 0) {
-    return result.argv.join(' ');
+    return commandTextFromArgv(result.argv);
   }
   return typeof rawCommand === 'string' ? rawCommand : '';
 }

@@ -55,6 +55,7 @@ function reset() {
   S.providerCalls = [];
   S.classifyResults = [];
   S.classifyCalls = [];
+  S.useRealClassify = false;
   S.execCalls = [];
   S.execResults = [];
   S.provisionCalls = [];
@@ -176,6 +177,10 @@ const fakeProviderModule = {
   },
 };
 
+// The real classifier, for the tests that set S.useRealClassify to check the
+// approval round-trip end to end. Loaded before the stub replaces it.
+const { classify: realClassify } = require('./policy/commandPolicy');
+
 inject('../config/db', fakePrisma);
 inject('../crypto/envelope', { decrypt: (serialized) => `decrypted:${serialized}` });
 inject('./providers', { getProvider: () => fakeProviderModule });
@@ -183,6 +188,7 @@ inject('./systemPrompt.service', { getPersona: async () => S.persona });
 inject('./policy/commandPolicy', {
   classify: (args) => {
     S.classifyCalls.push(args);
+    if (S.useRealClassify) return realClassify(args);
     if (S.classifyResults.length === 0) throw new Error('unexpected classify() call');
     return S.classifyResults.shift();
   },
@@ -1136,7 +1142,8 @@ test('persisted command text and audit metadata come from argv, never the raw mo
     text: 'list instances',
   });
 
-  assert.equal(messages[1].content, realArgv.join(' '));
+  // The empty word is kept, quoted, so the text parses back to this argv.
+  assert.equal(messages[1].content, "aws ec2 describe-instances --filters ''");
   assert.notEqual(messages[1].content, rawCommand);
   assert.deepEqual(S.audits[0].metadata.command, realArgv);
   // And the argv array -- not a joined string -- is what reaches the sandbox.
@@ -1167,7 +1174,7 @@ test('a confirmation-gated proposal persists argv, not the divergent raw command
     text: 'terminate it',
   });
 
-  assert.equal(messages[1].content, realArgv.join(' '));
+  assert.equal(messages[1].content, "aws ec2 terminate-instances --instance-ids ''");
   assert.notEqual(messages[1].content, rawCommand);
   assert.deepEqual(S.audits[0].metadata.command, realArgv);
 });
@@ -2102,4 +2109,84 @@ test('hooks: the dry-run preview runs with the provider-transformed argv', async
 
     assert.deepEqual(S.execCalls[0].argv, ['aws', 'ec2', 'terminate-instances', '--dry-run', 'X']);
   });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Approval round-trip, with the real classifier                               */
+/* -------------------------------------------------------------------------- */
+
+async function proposeAndConfirm({ workspace, credential, binary, command }) {
+  reset();
+  S.useRealClassify = true;
+  S.persona.allowedBinaries = [binary];
+  const session = makeSession();
+  S.providerResponses = [{ type: 'command_request', content: command, command }];
+
+  const proposed = await handleUserMessage({
+    session,
+    workspace,
+    credential,
+    userId: 'user-1',
+    text: 'do it',
+  });
+  const pending = proposed.messages.find(
+    (m) => m.status === CHAT_MESSAGE_STATUS.PENDING_CONFIRMATION,
+  );
+  assert.ok(pending, 'the command was proposed for approval');
+  assert.equal(S.execCalls.length, 0, 'nothing ran before approval');
+
+  S.providerResponses = [{ type: 'text', content: 'ok' }];
+  const confirmed = await confirmCommand({
+    session,
+    workspace,
+    credential,
+    messageId: pending.id,
+    userId: 'user-1',
+  });
+  return { pending, confirmed, proposedArgv: realClassify(S.classifyCalls[0]).argv };
+}
+
+test('round-trip: a kubectl JSON patch runs exactly as proposed after confirmation', async () => {
+  const { pending, confirmed, proposedArgv } = await proposeAndConfirm({
+    workspace: { id: 'ws-1', csp: 'KUBERNETES' },
+    credential: { kubeconfig: 'apiVersion: v1' },
+    binary: 'kubectl',
+    command: `kubectl patch deploy x -p '{"spec":{"replicas":3}}'`,
+  });
+
+  const argv = ['kubectl', 'patch', 'deploy', 'x', '-p', '{"spec":{"replicas":3}}'];
+  assert.deepEqual(proposedArgv, argv);
+  assert.equal(pending.content, `kubectl patch deploy x -p '{"spec":{"replicas":3}}'`);
+  assert.equal(confirmed.messages[0].status, CHAT_MESSAGE_STATUS.EXECUTED);
+  assert.deepEqual(S.execCalls[0].argv, argv);
+});
+
+test('round-trip: an SSH sudo journalctl with a spaced --since is accepted at confirm', async () => {
+  const { confirmed, proposedArgv } = await proposeAndConfirm({
+    workspace: { id: 'ws-1', csp: 'SSH' },
+    credential: { hosts: [{ name: 'web-01', address: '10.0.0.5', port: 22 }] },
+    binary: 'ssh',
+    command: 'ssh web-01 sudo journalctl --since "2026-11-09 10:00"',
+  });
+
+  assert.deepEqual(proposedArgv, [
+    'ssh',
+    'web-01',
+    'sudo',
+    'journalctl',
+    '--since',
+    '2026-11-09 10:00',
+  ]);
+  assert.equal(confirmed.messages[0].status, CHAT_MESSAGE_STATUS.EXECUTED);
+  // The remote words are single-quoted for the remote shell; the spaced value
+  // stays one word.
+  assert.deepEqual(S.execCalls[0].argv, [
+    'ssh',
+    'web-01',
+    '--',
+    "'sudo'",
+    "'journalctl'",
+    "'--since'",
+    "'2026-11-09 10:00'",
+  ]);
 });

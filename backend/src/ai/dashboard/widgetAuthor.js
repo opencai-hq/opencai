@@ -32,6 +32,7 @@ const {
   executionOutcome,
 } = require('../conversation');
 const { classify } = require('../policy/commandPolicy');
+const { commandTextFromArgv } = require('../policy/commandText');
 const { POLICY_VERDICTS } = require('../policy/policyVerdicts');
 const { combineOutput } = require('../sanitizer');
 const { getCsp, policyContextFor } = require('../csp');
@@ -297,7 +298,7 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
       cspContext: policyContextFor(workspace.csp, credential),
     });
     const commandText =
-      verdict.argv.length > 0 ? verdict.argv.join(' ') : String(reply.command ?? '');
+      verdict.argv.length > 0 ? commandTextFromArgv(verdict.argv) : String(reply.command ?? '');
     const readOnly =
       verdict.verdict === POLICY_VERDICTS.ALLOW_LOOKUP ||
       verdict.verdict === POLICY_VERDICTS.ALLOW_READONLY;
