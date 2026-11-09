@@ -168,6 +168,46 @@ function namesSecret(token) {
     });
 }
 
+// Only these output formats. `templatefile`, `go-template-file` and friends read
+// the file named by --template, and the kubeconfig is one of the sandbox's files.
+const OUTPUT_FORMATS = new Set(['json', 'yaml', 'wide', 'name']);
+const OUTPUT_PREFIXES = ['jsonpath=', 'custom-columns=', 'go-template=', 'template='];
+const outputAllowed = (value) =>
+  typeof value === 'string' &&
+  (OUTPUT_FORMATS.has(value) || OUTPUT_PREFIXES.some((p) => value.startsWith(p)));
+
+/** The reason an -o/--output (or --template) flag is refused, or null. All spellings. */
+function outputFlagReason(t) {
+  for (let i = 0; i < t.length; i += 1) {
+    const token = t[i];
+    if (token === '--template' || token.startsWith('--template=')) return token;
+    let value;
+    let found = false;
+    if (token.startsWith('--')) {
+      const [name, ...rest] = token.slice(2).split('=');
+      if (name === 'output') {
+        found = true;
+        value = rest.length ? rest.join('=') : t[i + 1];
+      }
+    } else if (token.startsWith('-') && token.length > 1) {
+      // pflag: bool flags, then the first value-taking flag takes the rest of the
+      // cluster (after an optional "=") or the next word.
+      const body = token.slice(1);
+      for (let c = 0; c < body.length; c += 1) {
+        if (!VALUE_SHORT_FLAGS.has(body[c])) continue;
+        if (body[c] === 'o') {
+          found = true;
+          const rest = body.slice(c + 1);
+          value = rest === '' ? t[i + 1] : rest.replace(/^=/, '');
+        }
+        break;
+      }
+    }
+    if (found && !outputAllowed(value)) return token;
+  }
+  return null;
+}
+
 const WORD = /^[a-z][a-z-]*$/;
 const isHelp = (token) => token === '--help' || token === '-h';
 
@@ -209,7 +249,7 @@ function classifyOperation(argv) {
   // After a bare `--` the CLI stops reading flags.
   if (t.includes('--')) return { reject: 'A bare "--" is not allowed' };
 
-  const blocked = t.map(blockedFlagReason).find(Boolean);
+  const blocked = t.map(blockedFlagReason).find(Boolean) ?? outputFlagReason(t);
   if (blocked) {
     return { reject: `The option "${blocked}" is not available in this environment` };
   }

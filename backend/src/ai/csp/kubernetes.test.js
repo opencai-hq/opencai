@@ -404,3 +404,41 @@ test('flag-value confusion: -n before the verb is fine', () => {
   assert.equal(classify('kubectl -n dev rollout status deploy/web').kind, 'readonly');
   assert.equal(classify('kubectl --namespace dev rollout restart deploy/web').kind, 'mutating');
 });
+
+// Fix round 1: -o is an allowlist; templatefile reads the stored kubeconfig.
+expectReject([
+  'kubectl get pods -o templatefile --template=/home/sandbox/.kube/config',
+  'kubectl get pods -otemplatefile --template /home/sandbox/.kube/config',
+  'kubectl get pods --output=templatefile --template=/home/sandbox/.kube/config',
+  'kubectl get pods --output templatefile --template /home/sandbox/.kube/config',
+  'kubectl get pods -o=templatefile',
+  'kubectl get pods -Ao templatefile',
+  'kubectl get pods -o',
+  'kubectl get pods -o=',
+  'kubectl get pods --output=',
+  'kubectl get pods -o go-template-file=/x',
+  'kubectl get pods -o go-template',
+  'kubectl get pods -o JSON',
+  'kubectl get pods --template={{.}}',
+  'kubectl get pods --template {{.}}',
+]);
+expectKind('readonly', [
+  'kubectl get pods -o json',
+  'kubectl get pods -ojson',
+  'kubectl get pods -o=json',
+  'kubectl get pods -o yaml',
+  'kubectl get pods -oyaml',
+  'kubectl get pods --output yaml',
+  'kubectl get pods --output=wide',
+  'kubectl get pods -o name',
+  'kubectl get pods -o jsonpath={.items[0].metadata.name}',
+  'kubectl get pods -ocustom-columns=NAME:.metadata.name',
+  'kubectl get pods -o go-template={{.items}}',
+  'kubectl get pods -o template={{.items}}',
+  'kubectl get pods -Ao json',
+]);
+test('fix round 1: version -o json|yaml is still lookup', () => {
+  assert.equal(classify('kubectl version -o json').kind, 'lookup');
+  assert.equal(classify('kubectl version --client -o yaml').kind, 'lookup');
+  assert.ok(classify('kubectl version -o templatefile').kind !== 'lookup');
+});
