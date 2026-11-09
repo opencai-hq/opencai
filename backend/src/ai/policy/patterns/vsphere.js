@@ -11,6 +11,11 @@ const REJECTED_PREFIXES = [
   'vm.console',
   'import.',
   'export.',
+  // Sensitive reads that would otherwise match a read-only suffix (.ls/.info).
+  'license.', // license keys
+  'sso.', // SSO users, groups and service accounts
+  'option.', // vCenter/host advanced settings, which can hold secrets
+  'permissions.', // who holds which role where
 ];
 
 // Global client flags that redirect, weaken or log the authenticated session.

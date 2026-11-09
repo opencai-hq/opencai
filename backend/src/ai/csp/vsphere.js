@@ -114,6 +114,7 @@ const promptRules = [
   'To check syntax, use run_lookup with "govc <command> -h".',
   'The datacenter is preselected when one is configured; do not pass -dc unless you need another.',
   'guest.* commands and datastore file transfer (upload and download) are unavailable.',
+  'license.*, sso.*, option.* and permissions.* commands are unavailable.',
 ];
 
 module.exports = {
