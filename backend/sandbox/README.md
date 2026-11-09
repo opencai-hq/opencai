@@ -15,6 +15,7 @@ From the repository root, for each provider you use:
 docker build -t opencai-sandbox-aws:2.15.30 backend/sandbox/aws
 docker build -t opencai-sandbox-azure:2.91.0 backend/sandbox/azure
 docker build -t opencai-sandbox-gcp:588.0.0 backend/sandbox/gcp
+docker build -t opencai-sandbox-vsphere:0.46.3 backend/sandbox/vsphere
 ```
 
 The tags must match `SANDBOX_IMAGE_TAGS` in `backend/src/ai/constants.js`
@@ -33,6 +34,7 @@ missing build can never silently fall back to an unhardened upstream image
 | `opencai-sandbox-aws`   | AWS CLI v2.15.30                                                 |
 | `opencai-sandbox-azure` | Azure CLI 2.91.0 with the `costmanagement` and `resource-graph` extensions |
 | `opencai-sandbox-gcp`   | Google Cloud CLI 588.0.0, `gcloud` only (`gsutil` and `bq` are removed)    |
+| `opencai-sandbox-vsphere` | govc v0.46.3 (VMware vSphere)                                  |
 
 - One CLI per image and nothing else — this is a binary allowlist, not a
   general-purpose shell environment. Do not add tools here. An AWS session has

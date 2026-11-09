@@ -2,6 +2,7 @@ const { CSP } = require('../../constants/csp');
 const aws = require('./aws');
 const azure = require('./azure');
 const gcp = require('./gcp');
+const vsphere = require('./vsphere');
 
 // Everything the agent path needs to know about one cloud provider: its CLI
 // binary and sandbox image, how its credentials are validated and handed to the
@@ -10,6 +11,7 @@ const CSPS = {
   [CSP.AWS]: aws,
   [CSP.AZURE]: azure,
   [CSP.GCP]: gcp,
+  [CSP.VSPHERE]: vsphere,
 };
 
 function getCsp(name) {
