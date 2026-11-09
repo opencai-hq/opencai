@@ -259,7 +259,7 @@ opencai/
 
 ## Sandbox images
 
-Every command the agent runs executes in a container that holds one cloud provider's CLI and
+Every command the agent runs executes in a container that holds one provider's CLI and
 nothing else. There is one image per provider, and a chat session uses the image of its
 Workspace's provider:
 
@@ -268,6 +268,9 @@ Workspace's provider:
 | AWS          | `docker build -t opencai-sandbox-aws:2.15.30 backend/sandbox/aws`     |
 | Azure        | `docker build -t opencai-sandbox-azure:2.91.0 backend/sandbox/azure`  |
 | Google Cloud | `docker build -t opencai-sandbox-gcp:588.0.0 backend/sandbox/gcp`     |
+| VMware vSphere | `docker build -t opencai-sandbox-vsphere:0.46.3 backend/sandbox/vsphere` |
+| Linux (SSH)  | `docker build -t opencai-sandbox-ssh:9.7p1 backend/sandbox/ssh`       |
+| Kubernetes   | `docker build -t opencai-sandbox-kubernetes:1.31.4 backend/sandbox/kubernetes` |
 
 Build only the ones you need. A chat on a provider whose image is missing replies that the
 execution environment couldn't be started.
@@ -275,6 +278,66 @@ execution environment couldn't be started.
 Upgrading from a version that had a single `opencai-sandbox:2.15.30` image: build
 `opencai-sandbox-aws:2.15.30` as above. The old image is no longer used and can be removed with
 `docker rmi opencai-sandbox:2.15.30`.
+
+## On-prem providers
+
+Besides AWS, Azure and Google Cloud, a Workspace can target on-prem infrastructure. Choose
+**On-Prem** in the operator sidebar to see those Workspaces. Each provider has its own sandbox
+image, built like the cloud ones:
+
+```sh
+docker build -t opencai-sandbox-vsphere:0.46.3 backend/sandbox/vsphere
+docker build -t opencai-sandbox-ssh:9.7p1 backend/sandbox/ssh
+docker build -t opencai-sandbox-kubernetes:1.31.4 backend/sandbox/kubernetes
+```
+
+**Network requirement.** Sandboxes run on Docker's default bridge network, and OpenCAI does not
+change that. The target (vCenter, each Linux server, or the Kubernetes API server) must be
+reachable from a container on that network. On Linux hosts and Docker Desktop (including Windows)
+this works for any address the host itself can reach, and for other containers by their bridge IP
+or a published host port. Container names do not resolve on the default bridge. If your
+vCenter or servers sit behind a VPN or a separate network, make sure the Docker host is joined to
+it. Verify with a throwaway container: `docker run --rm alpine wget -qO- --no-check-certificate https://<vcenter>/`.
+
+FinOps is not available for on-prem Workspaces; they get CloudOps only.
+
+### VMware vSphere
+
+- Credential: vCenter URL (`https://...`), username, password, optional "skip certificate
+  verification" and optional default datacenter. The agent drives `govc` with those.
+- Account: a vSphere role limited to what you want the agent to do. Read-only for inventory;
+  add power and snapshot privileges only if you want the agent to propose those changes (each
+  needs Operator approval).
+- Not available: guest operations (`guest.*`) and datastore upload and download. Client connection
+  flags such as `-u`, `-k` and `-dc` overrides are blocked, so the agent cannot redirect the
+  connection or expose the credential.
+
+### Linux servers (SSH)
+
+- Credential: a user name, an unencrypted private key (no passphrase), a list of hosts (a short
+  name, an address and a port, default 22) and, strongly recommended, `known_hosts` lines for those
+  hosts. The agent can only reach the hosts you list.
+- Supply `known_hosts`. Without it each new sandbox trusts the host key on first use, so there is
+  no protection against a man-in-the-middle across sessions.
+- The remote login shell must be POSIX-compatible (sh, bash, dash or zsh). csh and fish are not
+  supported.
+- Reads are limited to the commands the classifier knows and to files under `/var/log` plus a few
+  system files. That allowlist is lexical, and symlinks under `/var/log` are followed, so do not
+  place symlinks to sensitive files there.
+- Changes use `sudo`. Give the remote user passwordless sudo (`NOPASSWD`) for exactly the commands
+  you want the agent to be able to run with approval (for example `systemctl restart nginx`), not
+  blanket sudo. Everything that mutates asks the Operator first.
+
+### Kubernetes
+
+- Credential: a kubeconfig (paste the file) and an optional default namespace. Use a service
+  account token or a client certificate, with the credentials embedded in the file. Exec plugins
+  and `auth-provider` entries cannot run in the sandbox, which holds only `kubectl`.
+- Bind that identity to a Role or ClusterRole with the least access needed (for example `view`).
+- Not available: Secrets (never readable), `exec`, `port-forward`, `cp`, `proxy`, `run`, `edit`,
+  `debug`, `attach` and applying from files (`apply -f`, `create -f`). Use imperative changes such
+  as `scale`, `set image` or `rollout restart`. `--kubeconfig`, `--context`, `--server`, `--token`
+  and `--as` are blocked.
 
 ## Cloud credentials
 

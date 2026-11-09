@@ -47,7 +47,9 @@ missing build can never silently fall back to an unhardened upstream image
   `10001:10001` at the Docker API level by `sandboxManager.js`.
 - A long-lived `sleep infinity` process, so one container serves repeated
   `docker exec` calls for the lifetime of a chat session.
-- `timeout` and, in the Azure image, `sh`. `executeInSandbox` wraps every
+- GNU `timeout` (the vSphere, SSH and Kubernetes images are Alpine-based and install
+  `coreutils` for it, because busybox `timeout` has no `--signal` flag) and, in the Azure
+  and SSH images, `sh`. `executeInSandbox` wraps every
   command in `timeout`; the Azure sign-in (`backend/src/ai/csp/azure.js`) is the
   one fixed, backend-owned command that runs through `sh`. The SSH sign-in
   (`backend/src/ai/csp/ssh.js`) likewise runs one fixed `sh` script that writes

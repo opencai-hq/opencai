@@ -122,7 +122,7 @@ A landing screen presenting selectable sections (cards, tiles, or a side menu �
 A **left sidebar**, top to bottom:
 
 1. **Two pill-style toggle buttons at the top: "Cloud" and "On-Prem".**
-   - Selecting **On-Prem** replaces the rest of the sidebar content with a simple "Coming Soon" message.
+   - Selecting **On-Prem** shows the same sidebar content, with the Workspace selector limited to on-prem providers: VMware vSphere, Linux servers (SSH) and Kubernetes. FinOps is not available for them.
    - Selecting **Cloud** (default) shows the rest of the sidebar as described below.
 2. **Workspace summary card** (visible once a Workspace has been chosen) — a small 2x2 card labelled **"Choose your Workspace"** with an edit icon, showing the four resolved values as read-only labels: **Business** (the Organisation name), **Environment**, **Cloud Provider** (CSP), **Account / Subscription**. Clicking the edit icon reopens the full selector described below.
 3. **Mode list** — below the workspace card, the two mode entries: **CloudOps** and **FinOps** (icons + labels).
