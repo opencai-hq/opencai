@@ -327,6 +327,7 @@ function promptRules(credential) {
   return [
     `Run commands as "ssh <host> <command> [args]". The hosts are: ${hostNames.join(', ') || '(none configured)'}. Use these names exactly; never an address or user@host.`,
     'Do not pass ssh options; the connection is preconfigured.',
+    'Help lookups are not available for SSH commands; use only the documented flags.',
     'Each command runs as plain words: no pipes, redirects, globs, quotes, variables, ";" or "&&". Run one command per step.',
     'Prefix sudo only when the command needs root. Any command with sudo needs Operator approval.',
     'Read logs with "journalctl -u <unit> -n <lines> --no-pager" or "--since"; never follow output (-f).',

@@ -248,6 +248,7 @@ test('promptRules: a function naming the hosts only', () => {
   assert.ok(!text.includes('10.0.0.5') && !text.includes('deploy') && !text.includes('db.lab'));
   assert.match(text, /journalctl/);
   assert.match(text, /top -b -n 1/);
+  assert.match(text, /help lookups are not available for SSH commands/i);
   assert.ok(Array.isArray(ssh.promptRules(null)));
   // Array promptRules still work.
   assert.match(providerRulesFor(getCsp('AWS')), /Amazon Web Services|AWS/);
@@ -321,6 +322,33 @@ expectKind('readonly', [
   'ssh web-01 last -n 10',
   'ssh web-01 uname -a',
   'ssh web-01 who -b',
+  'ssh web-01 id',
+  'ssh web-01 lscpu',
+  'ssh web-01 lscpu -J',
+  'ssh web-01 vmstat',
+  'ssh web-01 vmstat -s',
+  'ssh web-01 vmstat -w',
+  'ssh web-01 vmstat -S M',
+  'ssh web-01 vmstat -S K -w',
+  'ssh web-01 vmstat -sw',
+]);
+expectReject([
+  'ssh web-01 id root',
+  'ssh web-01 id -u',
+  'ssh web-01 id -Gn',
+  'ssh web-01 lscpu -e',
+  'ssh web-01 lscpu -p',
+  'ssh web-01 lscpu --json',
+  'ssh web-01 lscpu -J -x',
+  'ssh web-01 lscpu /proc',
+  'ssh web-01 vmstat 1',
+  'ssh web-01 vmstat 1 5',
+  'ssh web-01 vmstat -S G',
+  'ssh web-01 vmstat -S',
+  'ssh web-01 vmstat -SM',
+  'ssh web-01 vmstat -d',
+  'ssh web-01 vmstat -a',
+  'ssh web-01 vmstat --wide',
 ]);
 test('readonly: journalctl --since with spaces', () => {
   const v = ssh.classifyOperation(['ssh', 'web-01', 'journalctl', '--since', '1 hour ago'], HOSTS);
