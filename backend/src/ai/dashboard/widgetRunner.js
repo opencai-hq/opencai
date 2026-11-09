@@ -22,7 +22,7 @@ const { sanitizeOutput } = require('../sanitizer');
 const { allowedBinariesForMode } = require('../systemPrompt.service');
 const { executeInSandbox } = require('../sandbox/sandboxManager');
 const pool = require('../sandbox/dashboardSandboxPool');
-const { policyContextFor, execArgvFor } = require('../csp');
+const { getCsp, policyContextFor, execArgvFor } = require('../csp');
 const { withUserSlot } = require('./runLimiter');
 const { emitStatus } = require('../../realtime/progress');
 const { resolvePeriod } = require('./period');
@@ -176,10 +176,10 @@ async function runCommand({
   try {
     return { ok: true, json: JSON.parse(sanitizeOutput(execution.stdout)), argv: verdict.argv };
   } catch {
+    const csp = getCsp(workspace.csp);
     return {
       ok: false,
-      error:
-        'The command output was not JSON, or was too large to read. The command must print JSON (--output json / --format=json) and return a modest amount of data.',
+      error: `The command output was not JSON, or was too large to read. The command must print JSON (${csp.label}: ${csp.dashboardOutputHint}) and return a modest amount of data.`,
     };
   }
 }

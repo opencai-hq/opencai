@@ -262,6 +262,45 @@ test('output that is not JSON, or was cut off, is a failure', async () => {
 
   assert.match(text.error, /not JSON/);
   assert.match(truncated.error, /not JSON/);
+  // The hint is the Workspace provider's own.
+  assert.ok(text.error.includes('(AWS: --output json)'), text.error);
+});
+
+const SSH_RUN = {
+  workspace: { id: 'ws-ssh', csp: 'SSH' },
+  credential: { hosts: [{ name: 'web-01', address: '10.0.0.5', port: 22 }] },
+  mode: 'CLOUDOPS',
+  period: 'NONE',
+  chartSpec: { type: 'table', rowsPath: 'blockdevices', columns: ['name'] },
+};
+
+test("the not-JSON error names the on-prem provider's own output hint", async () => {
+  reset();
+  S.allowedBinaries = ['ssh'];
+  S.execResults.push(ok('Architecture: x86_64\n'));
+
+  const result = await run({ ...SSH_RUN, commandTemplate: 'ssh web-01 lscpu' });
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /not JSON/);
+  assert.match(result.error, /Linux servers \(SSH\): use JSON-capable flags/);
+  assert.doesNotMatch(result.error, /--format=json\)/);
+});
+
+test('the dashboard classify gets the Workspace cspContext (SSH host names)', async () => {
+  reset();
+  S.allowedBinaries = ['ssh'];
+  S.execResults.push(ok(JSON.stringify({ blockdevices: [{ name: 'sda' }] })));
+
+  const known = await run({ ...SSH_RUN, commandTemplate: 'ssh web-01 lsblk -J' });
+  const unknown = await run({ ...SSH_RUN, commandTemplate: 'ssh db-01 lsblk -J' });
+
+  // Without the context there are no hosts, so even web-01 would be refused.
+  assert.equal(known.ok, true, JSON.stringify(known));
+  assert.deepEqual(S.execCalls[0].argv, ['ssh', 'web-01', '--', "'lsblk'", "'-J'"]);
+  assert.equal(unknown.ok, false);
+  assert.match(unknown.error, /Unknown host "db-01"; use one of: web-01/);
+  assert.equal(S.execCalls.length, 1);
 });
 
 test('only stdout is parsed: warnings on stderr do not break a graph', async () => {

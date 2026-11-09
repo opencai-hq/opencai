@@ -28,6 +28,7 @@ function reset() {
   S.execResults = [];
   S.execCalls = [];
   S.audits = [];
+  S.allowedBinaries = ['aws', 'az', 'gcloud'];
 }
 
 inject('../../config/db', {
@@ -51,7 +52,7 @@ inject('../providers', {
     },
   }),
 });
-inject('../systemPrompt.service', { allowedBinariesForMode: async () => ['aws', 'az', 'gcloud'] });
+inject('../systemPrompt.service', { allowedBinariesForMode: async () => S.allowedBinaries });
 inject('../sandbox/sandboxManager', {
   async executeInSandbox(containerId, argv) {
     S.execCalls.push(argv);
@@ -534,4 +535,27 @@ test('authorWidget: the JSON-output line names the Workspace provider flag', asy
   const { systemPrompt } = S.providerCalls[0];
   assert.ok(systemPrompt.includes('It must print JSON (Kubernetes: add -o json)'));
   assert.ok(!systemPrompt.includes('AWS and Azure: --output json'));
+});
+
+test('authorWidget: the look-first classify gets the Workspace cspContext (SSH host names)', async () => {
+  reset();
+  S.allowedBinaries = ['ssh'];
+  S.providerResponses.push(
+    { type: 'command_request', command: 'ssh web-01 lsblk -J' },
+    { type: 'command_request', command: 'ssh db-01 lsblk -J' },
+  );
+  S.execResults.push(ok(JSON.stringify({ blockdevices: [] })));
+
+  await assert.rejects(
+    author({
+      workspace: { id: 'ws-1', csp: 'SSH' },
+      credential: { hosts: [{ name: 'web-01', address: '10.0.0.5', port: 22 }] },
+      mode: 'CLOUDOPS',
+    }),
+  );
+
+  // A configured host runs (it would be refused with no context); another does not.
+  assert.deepEqual(S.execCalls, [['ssh', 'web-01', '--', "'lsblk'", "'-J'"]]);
+  const rejected = S.providerCalls[2].newMessage;
+  assert.match(rejected, /Unknown host "db-01"; use one of: web-01/);
 });
