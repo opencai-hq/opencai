@@ -1,15 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../lib/AuthContext';
 import { listAccessibleOrganisations, listOrganisationWorkspaces } from '../../../lib/operatorApi';
-import { cspLabel } from '../../../lib/csp';
+import { accountLabel, cspKind, cspLabel } from '../../../lib/csp';
 
 const selectClass =
   'mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 disabled:opacity-50';
 
-export function WorkspaceSelectorForm({ onComplete }) {
+export function WorkspaceSelectorForm({ onComplete, kind = 'cloud' }) {
   const { token } = useAuth();
   const [organisations, setOrganisations] = useState([]);
-  const [workspaces, setWorkspaces] = useState([]);
+  const [allWorkspaces, setWorkspaces] = useState(null);
+  // Switching Cloud / On-Prem starts the choice over.
+  useEffect(() => {
+    setEnvironment('');
+    setCsp('');
+    setAccount('');
+  }, [kind]);
+
+  const workspaces = useMemo(
+    () => (allWorkspaces || []).filter((w) => cspKind(w.csp) === kind),
+    [allWorkspaces, kind],
+  );
   const [orgId, setOrgId] = useState('');
   const [environment, setEnvironment] = useState('');
   const [csp, setCsp] = useState('');
@@ -27,9 +38,10 @@ export function WorkspaceSelectorForm({ onComplete }) {
     setCsp('');
     setAccount('');
     if (!orgId) {
-      setWorkspaces([]);
+      setWorkspaces(null);
       return;
     }
+    setWorkspaces(null);
     listOrganisationWorkspaces(token, orgId)
       .then(setWorkspaces)
       .catch((err) => setError(err.message));
@@ -71,7 +83,9 @@ export function WorkspaceSelectorForm({ onComplete }) {
         Choose your Workspace
       </h2>
       <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-        Choose your Business, Environment, Cloud Provider, and Account to manage cloud resources.
+        {kind === 'onprem'
+          ? 'Choose your Business, Environment, Provider, and Site / Cluster to manage on-prem infrastructure.'
+          : 'Choose your Business, Environment, Cloud Provider, and Account to manage cloud resources.'}
       </p>
 
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
@@ -108,7 +122,7 @@ export function WorkspaceSelectorForm({ onComplete }) {
         </div>
         <div>
           <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-            Cloud Provider
+            {kind === 'onprem' ? 'Provider' : 'Cloud Provider'}
           </label>
           <select
             value={csp}
@@ -126,7 +140,7 @@ export function WorkspaceSelectorForm({ onComplete }) {
         </div>
         <div>
           <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-            Account / Subscription
+            {kind === 'onprem' ? accountLabel(csp || 'SSH') : 'Account / Subscription'}
           </label>
           <select
             value={account}
@@ -143,6 +157,14 @@ export function WorkspaceSelectorForm({ onComplete }) {
           </select>
         </div>
       </div>
+
+      {orgId && allWorkspaces && workspaces.length === 0 && !error && (
+        <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+          {kind === 'onprem'
+            ? 'No on-prem Workspaces in this organisation'
+            : 'No cloud Workspaces in this organisation'}
+        </p>
+      )}
 
       {organisations.length === 0 && !error && (
         <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">

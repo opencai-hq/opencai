@@ -19,6 +19,7 @@ import { ViewToggle } from './components/ViewToggle';
 import { WorkspaceSelectorForm } from './components/WorkspaceSelectorForm';
 import { ChatSessionHeader, NewSessionButton } from './components/ChatSessionHeader';
 import { CloudOpsScreen } from './components/CloudOpsScreen';
+import { cspKind } from '../../lib/csp';
 import { FinOpsScreen } from './components/FinOpsScreen';
 
 // The dashboard brings the charting library with it; load it only when opened.
@@ -52,7 +53,7 @@ export function OperatorPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const openSessionId = searchParams.get('session');
   const view = searchParams.get('view') === 'dashboard' ? 'dashboard' : 'chat';
-  const [cloudOrOnPrem, setCloudOrOnPrem] = useState('cloud');
+  const [cloudOrOnPrem, setCloudOrOnPrem] = useState(() => cspKind(workspace?.csp));
   const [editingWorkspace, setEditingWorkspace] = useState(false);
   const [activeMode, setActiveMode] = useState(() =>
     searchParams.get('mode') === 'FINOPS' ? 'FINOPS' : 'CLOUDOPS',
@@ -124,7 +125,7 @@ export function OperatorPage() {
         if (cancelled) return;
         setWorkspace(session.workspace);
         setEditingWorkspace(false);
-        setCloudOrOnPrem('cloud');
+        setCloudOrOnPrem(cspKind(session.workspace.csp));
         setActiveMode(session.mode);
         setFinanceSubMode(session.subMode ?? null);
         setSessionsByKey((prev) => ({
@@ -355,13 +356,35 @@ export function OperatorPage() {
     }
   }
 
+  // FinOps does not exist for on-prem Workspaces: never leave it selected there.
+  const workspaceIsOnPrem = workspace ? cspKind(workspace.csp) === 'onprem' : false;
+  useEffect(() => {
+    if (workspaceIsOnPrem && activeMode === 'FINOPS') {
+      setActiveMode('CLOUDOPS');
+      setFinanceSubMode(null);
+    }
+  }, [workspaceIsOnPrem, activeMode]);
+
+  // Switching pills drops a selected Workspace of the other kind, so the
+  // selector shows (filtered to the new kind) instead of a stale chat.
+  function handleChangeCloudOrOnPrem(next) {
+    if (next === cloudOrOnPrem) return;
+    setCloudOrOnPrem(next);
+    setEditingWorkspace(false);
+    if (workspace && cspKind(workspace.csp) !== next) setWorkspace(null);
+    if (activeMode === 'FINOPS' && next === 'onprem') {
+      setActiveMode('CLOUDOPS');
+      setFinanceSubMode(null);
+    }
+  }
+
   function handleSelectMode(mode) {
     setActiveMode(mode);
     if (mode !== 'FINOPS') setFinanceSubMode(null);
   }
 
   const messages = currentSession ? messagesBySession[currentSession.id] || [] : [];
-  const showToggle = cloudOrOnPrem === 'cloud' && workspace && !editingWorkspace;
+  const showToggle = workspace && !editingWorkspace;
   const showChatBar = showToggle && view !== 'dashboard';
 
   return (
@@ -371,7 +394,7 @@ export function OperatorPage() {
       <div className="flex min-h-0 flex-1">
         <OperatorSidebar
           cloudOrOnPrem={cloudOrOnPrem}
-          onChangeCloudOrOnPrem={setCloudOrOnPrem}
+          onChangeCloudOrOnPrem={handleChangeCloudOrOnPrem}
           workspace={workspace}
           onEditWorkspace={() => setEditingWorkspace(true)}
           activeMode={activeMode}
@@ -403,13 +426,10 @@ export function OperatorPage() {
                 <ViewToggle view={view} onChange={handleChangeView} />
               </div>
             )}
-            {cloudOrOnPrem === 'onprem' ? (
-              <div className="flex flex-1 items-center justify-center pb-10 text-gray-400">
-                On-Prem support is coming soon.
-              </div>
-            ) : !workspace || editingWorkspace ? (
+            {!workspace || editingWorkspace ? (
               <div className="mx-auto w-full max-w-4xl pb-10">
                 <WorkspaceSelectorForm
+                  kind={cloudOrOnPrem}
                   onComplete={(ws) => {
                     setWorkspace(ws);
                     setEditingWorkspace(false);

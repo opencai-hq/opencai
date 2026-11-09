@@ -1,5 +1,5 @@
 import { EditIcon } from '../../../components/icons';
-import { cspLabel } from '../../../lib/csp';
+import { accountLabel, cspKind, cspLabel } from '../../../lib/csp';
 
 export function WorkspaceSummaryCard({ workspace, onEdit }) {
   return (
@@ -29,11 +29,17 @@ export function WorkspaceSummaryCard({ workspace, onEdit }) {
           <p className="font-medium text-gray-900 dark:text-gray-100">{workspace.environment}</p>
         </div>
         <div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Cloud Provider</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {cspKind(workspace.csp) === 'onprem' ? 'Provider' : 'Cloud Provider'}
+          </p>
           <p className="font-medium text-gray-900 dark:text-gray-100">{cspLabel(workspace.csp)}</p>
         </div>
         <div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Account / Subscription</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {cspKind(workspace.csp) === 'onprem'
+              ? accountLabel(workspace.csp)
+              : 'Account / Subscription'}
+          </p>
           <p className="font-medium text-gray-900 dark:text-gray-100">{workspace.account}</p>
         </div>
       </div>
