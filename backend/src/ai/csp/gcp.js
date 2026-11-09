@@ -141,6 +141,7 @@ const promptRules = [
 
 module.exports = {
   label: 'Google Cloud',
+  dashboardOutputHint: '--format=json',
   binary: 'gcloud',
   sandboxImage: SANDBOX_IMAGE_TAGS.GCP,
   credentialSchema,

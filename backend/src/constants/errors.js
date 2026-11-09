@@ -11,6 +11,7 @@ const ERROR_CODES = Object.freeze({
   FORBIDDEN: 'FORBIDDEN',
   VALIDATION_ERROR: 'VALIDATION_ERROR',
   NOT_FOUND: 'NOT_FOUND',
+  FINOPS_NOT_AVAILABLE_ON_PREM: 'FINOPS_NOT_AVAILABLE_ON_PREM',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   // Thrown with HTTP 503 by the AI orchestrator when ChatSettings has no
   // provider / API key configured yet.
@@ -74,6 +75,7 @@ const ERROR_MESSAGES = Object.freeze({
   [ERROR_CODES.FORBIDDEN]: 'You do not have permission to perform this action.',
   [ERROR_CODES.VALIDATION_ERROR]: 'The request could not be validated.',
   [ERROR_CODES.NOT_FOUND]: 'The requested resource was not found.',
+  [ERROR_CODES.FINOPS_NOT_AVAILABLE_ON_PREM]: 'FinOps is not available for on-prem Workspaces.',
   [ERROR_CODES.INTERNAL_ERROR]: 'An unexpected error occurred.',
   [ERROR_CODES.AI_PROVIDER_NOT_CONFIGURED]:
     'No AI provider is configured yet. An administrator needs to set one up in Manage Chat Settings.',

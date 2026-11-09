@@ -109,6 +109,7 @@ const promptRules = [
 
 module.exports = {
   label: 'Microsoft Azure',
+  dashboardOutputHint: '--output json',
   binary: 'az',
   sandboxImage: SANDBOX_IMAGE_TAGS.AZURE,
   credentialSchema,

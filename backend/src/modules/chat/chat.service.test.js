@@ -589,3 +589,44 @@ test('listSessions: hasMessages filters out unused sessions and search covers ti
     restoreAll();
   }
 });
+
+test('createSession: FINOPS on an on-prem Workspace is a 400 and nothing is created', async () => {
+  const getData = setupCreateSessionMocks({ personaCap: 3, settingsDefault: 25 });
+  prisma.workspace.findUnique = async () => ({
+    id: 'ws-1',
+    organisationId: 'org-1',
+    isActive: true,
+    csp: 'VSPHERE',
+  });
+
+  try {
+    await assert.rejects(
+      () => service.createSession(USER_ID, { workspaceId: 'ws-1', mode: 'FINOPS' }),
+      (err) => {
+        assert.equal(err.status, 400);
+        assert.equal(err.code, ERROR_CODES.FINOPS_NOT_AVAILABLE_ON_PREM);
+        return true;
+      },
+    );
+    assert.equal(getData(), undefined);
+  } finally {
+    restoreAll();
+  }
+});
+
+test('createSession: CLOUDOPS on an on-prem Workspace is allowed', async () => {
+  const getData = setupCreateSessionMocks({ personaCap: 3, settingsDefault: 25 });
+  prisma.workspace.findUnique = async () => ({
+    id: 'ws-1',
+    organisationId: 'org-1',
+    isActive: true,
+    csp: 'VSPHERE',
+  });
+
+  try {
+    await service.createSession(USER_ID, { workspaceId: 'ws-1', mode: 'CLOUDOPS' });
+    assert.equal(getData().mode, 'CLOUDOPS');
+  } finally {
+    restoreAll();
+  }
+});

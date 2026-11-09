@@ -523,3 +523,15 @@ test('live progress: the Operator sees each look, each try and why a try failed'
     statuses.some((text) => /^That graph didn't work \(try 1 of 3\): .*rowsPath/.test(text)),
   );
 });
+
+test('authorWidget: the JSON-output line names the Workspace provider flag', async () => {
+  reset();
+  await author({
+    workspace: { id: 'ws-1', csp: 'KUBERNETES' },
+    credential: {},
+    mode: 'CLOUDOPS',
+  }).catch(() => {});
+  const { systemPrompt } = S.providerCalls[0];
+  assert.ok(systemPrompt.includes('It must print JSON (Kubernetes: add -o json)'));
+  assert.ok(!systemPrompt.includes('AWS and Azure: --output json'));
+});

@@ -7,6 +7,8 @@ const {
   WIDGET_TTL_MS,
   MAX_ERROR_CHARS,
 } = require('../../constants/dashboard');
+const { isOnPrem } = require('../../constants/csp');
+const { CHAT_MODES } = require('../../constants/chatModes');
 const { loadWorkspaceForOperator } = require('../../ai/workspaceAccess');
 const { chainProblem, stepsOf } = require('../../ai/dashboard/chain');
 const { runWidget, writeDashboardAudit } = require('../../ai/dashboard/widgetRunner');
@@ -32,6 +34,13 @@ function toWidget(row, now = Date.now()) {
     lastError: row.lastError,
     stale: !row.lastAttemptAt || now - new Date(row.lastAttemptAt).getTime() > WIDGET_TTL_MS,
   };
+}
+
+// FinOps (cost, usage, tagging) has no meaning for on-prem Workspaces.
+function assertFinopsAllowed(mode, workspace) {
+  if (mode === CHAT_MODES.FINOPS && isOnPrem(workspace.csp)) {
+    throw new AppError(400, ERROR_CODES.FINOPS_NOT_AVAILABLE_ON_PREM);
+  }
 }
 
 function invalid(detail) {
@@ -91,6 +100,7 @@ async function listWidgets(userId, { workspaceId, mode }) {
 /** Build a graph from a plain-language request and run it once. Saves nothing. */
 async function previewWidget(userId, { workspaceId, mode, query }) {
   const access = await loadWorkspaceForOperator(userId, workspaceId);
+  assertFinopsAllowed(mode, access.workspace);
   return authorWidget({ userId, ...access, mode, query });
 }
 
@@ -102,6 +112,7 @@ async function createWidget(userId, body) {
   const { workspaceId, mode, query, title, steps, period, chartSpec, chartHtml } = body;
   const commandTemplate = steps ? steps[0].command : body.commandTemplate;
   const access = await loadWorkspaceForOperator(userId, workspaceId);
+  assertFinopsAllowed(mode, access.workspace);
 
   const count = await prisma.dashboardWidget.count({ where: { userId, workspaceId, mode } });
   if (count >= MAX_WIDGETS_PER_DASHBOARD) {

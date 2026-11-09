@@ -60,7 +60,7 @@ const MODE_CONTEXT = Object.freeze({
   [CHAT_MODES.FINOPS]: 'This is the FinOps dashboard: graphs about cost, usage, tagging and waste.',
 });
 
-const AUTHOR_PROMPT = `You build one graph for an Operator's cloud dashboard in OpenCAI. The Workspace (cloud provider, account and environment) is already selected. The Operator describes the graph they want; you work out the read-only CLI command that returns its data (or a short chain of them, when one command cannot) and how to turn the output into rows, and you write the small page that draws those rows.
+const authorPrompt = (csp) => `You build one graph for an Operator's cloud dashboard in OpenCAI. The Workspace (cloud provider, account and environment) is already selected. The Operator describes the graph they want; you work out the read-only CLI command that returns its data (or a short chain of them, when one command cannot) and how to turn the output into rows, and you write the small page that draws those rows.
 
 How to work:
 - Call run_command to run a read-only command and see its real output before you decide. Do this whenever you are not certain of the exact shape of the output: the graph only works if your field paths match it. Call run_lookup for CLI help.
@@ -82,7 +82,7 @@ or, for a chain of commands (see steps below), the same with "steps" in place of
 title: short, under 60 characters.
 
 commandTemplate: the one command run every time the graph refreshes.
-- It must print JSON (AWS and Azure: --output json; Google Cloud: --format=json).
+- It must print JSON (${csp.label}: ${csp.dashboardOutputHint}).
 - Never write a real date in it. Where the command takes dates, write {{start}} and either {{end}} (the day after today, for an end date that is exclusive, as in AWS Cost Explorer) or {{end_inclusive}} (today, for an end date that is inclusive). They are replaced with YYYY-MM-DD dates on every run. For a timestamp write, for example, {{start}}T00:00:00Z.
 - A command you run with run_command to explore needs real dates. Only the final commandTemplate uses placeholders.
 - No backticks, pipes or other shell syntax. Do not use the CLI's own --query option with backtick literals; shape the data with rowsPath instead.
@@ -212,7 +212,7 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
   const providerConfig = await resolveProviderConfig();
   const csp = getCsp(workspace.csp);
   const allowedBinaries = await allowedBinariesForMode(mode);
-  const systemPrompt = `${AUTHOR_PROMPT}\n\n${MODE_CONTEXT[mode] ?? ''}\n${providerRulesFor(csp, credential)}\n${currentDateRule()}`;
+  const systemPrompt = `${authorPrompt(csp)}\n\n${MODE_CONTEXT[mode] ?? ''}\n${providerRulesFor(csp, credential)}\n${currentDateRule()}`;
   const limits = providerConfig.limits ?? DEFAULT_REQUEST_LIMITS;
   const target = { userId, workspace, credential, credentialUpdatedAt };
 

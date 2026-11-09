@@ -94,5 +94,6 @@ module.exports = {
   buildEnv,
   classifyOperation,
   supportsRegions: true,
+  dashboardOutputHint: '--output json',
   promptRules,
 };

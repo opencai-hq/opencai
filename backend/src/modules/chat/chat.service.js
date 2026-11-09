@@ -1,6 +1,8 @@
 const prisma = require('../../config/db');
 const { AppError } = require('../../middleware/errorHandler');
 const { ERROR_CODES } = require('../../constants/errors');
+const { isOnPrem } = require('../../constants/csp');
+const { CHAT_MODES } = require('../../constants/chatModes');
 const envelope = require('../../crypto/envelope');
 const orchestrator = require('../../ai/orchestrator');
 const { getPersona } = require('../../ai/systemPrompt.service');
@@ -34,6 +36,9 @@ async function createSession(userId, { workspaceId, mode, subMode }) {
   const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
   if (!workspace) throw new AppError(404, ERROR_CODES.NOT_FOUND);
   if (!workspace.isActive) throw new AppError(403, ERROR_CODES.WORKSPACE_INACTIVE);
+  if (mode === CHAT_MODES.FINOPS && isOnPrem(workspace.csp)) {
+    throw new AppError(400, ERROR_CODES.FINOPS_NOT_AVAILABLE_ON_PREM);
+  }
 
   const access = await prisma.userOrganisation.findUnique({
     where: { userId_organisationId: { userId, organisationId: workspace.organisationId } },

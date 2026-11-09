@@ -532,3 +532,22 @@ test('updateWidget: a period change is checked against every step of a chain', a
   await service.updateWidget('user-1', widget.id, { period: 'LAST_7_DAYS' });
   assert.equal(S.runs.at(-1).period, 'LAST_7_DAYS');
 });
+
+test('previewWidget and createWidget: FinOps graphs are refused for an on-prem Workspace', async () => {
+  reset();
+  S.workspace.csp = 'SSH';
+
+  await assert.rejects(
+    () => service.previewWidget('user-1', { workspaceId: 'ws-1', mode: 'FINOPS', query: 'q' }),
+    fails(400, ERROR_CODES.FINOPS_NOT_AVAILABLE_ON_PREM),
+  );
+  await assert.rejects(
+    () => service.createWidget('user-1', BODY),
+    fails(400, ERROR_CODES.FINOPS_NOT_AVAILABLE_ON_PREM),
+  );
+  assert.equal(S.authorCalls.length, 0);
+  assert.equal(S.runs.length, 0);
+
+  await service.previewWidget('user-1', { workspaceId: 'ws-1', mode: 'CLOUDOPS', query: 'q' });
+  assert.equal(S.authorCalls.length, 1);
+});
