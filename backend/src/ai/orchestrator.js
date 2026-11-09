@@ -66,8 +66,8 @@ const KIND = Object.freeze({
  * The full system prompt for one Workspace: the persona, the tool rules, the
  * provider's own CLI rules, and today's date.
  */
-function systemPromptFor(persona, csp) {
-  return `${persona.systemPrompt}\n\n${TOOL_CALL_RULES}\n${providerRulesFor(csp)}\n${currentDateRule()}`;
+function systemPromptFor(persona, csp, credential) {
+  return `${persona.systemPrompt}\n\n${TOOL_CALL_RULES}\n${providerRulesFor(csp, credential)}\n${currentDateRule()}`;
 }
 
 const SANDBOX_UNAVAILABLE_TEXT = "The execution environment couldn't be started. Please try again.";
@@ -149,7 +149,7 @@ async function mapWithConcurrency(items, limit, fn) {
  * @returns {Promise<{ regions: string[], exitCodes: Record<string, number|null>,
  *                     output: string, outcome: string }>}
  */
-async function runAcrossRegions(containerId, argv, requested, options) {
+async function runAcrossRegions(containerId, cspName, argv, requested, options) {
   let regions = requested;
   let skipped = [];
   if (requested.includes('all')) {
@@ -168,7 +168,7 @@ async function runAcrossRegions(containerId, argv, requested, options) {
   }
 
   const executions = await mapWithConcurrency(regions, FANOUT_CONCURRENCY, (region) =>
-    executeInSandbox(containerId, [...argv, '--region', region], options),
+    executeInSandbox(containerId, execArgvFor(cspName, [...argv, '--region', region]), options),
   );
 
   const exitCodes = {};
@@ -395,7 +395,7 @@ async function runModelLoop({
   usage = {},
 }) {
   const csp = getCsp(workspace.csp);
-  const systemPrompt = systemPromptFor(persona, csp);
+  const systemPrompt = systemPromptFor(persona, csp, credential);
 
   for (let turn = 0; turn < MAX_MODEL_TURNS_PER_MESSAGE; turn += 1) {
     if (Date.now() - startedAt >= MAX_ORCHESTRATION_WALL_CLOCK_MS) break;
@@ -516,10 +516,13 @@ async function runModelLoop({
     // 3a. Read-only across several regions: one step, run in parallel.
     if (isReadOnly && requestedRegions) {
       emitStatus(`Running ${commandText}`, { command: commandText });
-      const fanout = await runAcrossRegions(containerId, result.argv, requestedRegions, {
-        env,
-        timeoutSeconds: providerConfig.sandboxCommandTimeoutSeconds,
-      });
+      const fanout = await runAcrossRegions(
+        containerId,
+        workspace.csp,
+        result.argv,
+        requestedRegions,
+        { env, timeoutSeconds: providerConfig.sandboxCommandTimeoutSeconds },
+      );
       const status = fanout.outcome.startsWith('failed')
         ? CHAT_MESSAGE_STATUS.FAILED
         : CHAT_MESSAGE_STATUS.EXECUTED;
@@ -644,7 +647,8 @@ async function runModelLoop({
       let dryRunOutput;
       emitStatus('Previewing the change with --dry-run');
       try {
-        const dryRun = await executeInSandbox(containerId, [...result.argv, '--dry-run'], {
+        const dryRunArgv = execArgvFor(workspace.csp, [...result.argv, '--dry-run']);
+        const dryRun = await executeInSandbox(containerId, dryRunArgv, {
           env,
           timeoutSeconds: providerConfig.sandboxCommandTimeoutSeconds,
         });

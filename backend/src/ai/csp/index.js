@@ -4,6 +4,7 @@ const azure = require('./azure');
 const gcp = require('./gcp');
 const vsphere = require('./vsphere');
 const kubernetes = require('./kubernetes');
+const ssh = require('./ssh');
 
 // Everything the agent path needs to know about one cloud provider: its CLI
 // binary and sandbox image, how its credentials are validated and handed to the
@@ -13,6 +14,7 @@ const CSPS = {
   [CSP.AZURE]: azure,
   [CSP.GCP]: gcp,
   [CSP.VSPHERE]: vsphere,
+  [CSP.SSH]: ssh,
   [CSP.KUBERNETES]: kubernetes,
 };
 

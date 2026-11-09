@@ -212,7 +212,7 @@ async function authorWidget({ userId, workspace, credential, credentialUpdatedAt
   const providerConfig = await resolveProviderConfig();
   const csp = getCsp(workspace.csp);
   const allowedBinaries = await allowedBinariesForMode(mode);
-  const systemPrompt = `${AUTHOR_PROMPT}\n\n${MODE_CONTEXT[mode] ?? ''}\n${providerRulesFor(csp)}\n${currentDateRule()}`;
+  const systemPrompt = `${AUTHOR_PROMPT}\n\n${MODE_CONTEXT[mode] ?? ''}\n${providerRulesFor(csp, credential)}\n${currentDateRule()}`;
   const limits = providerConfig.limits ?? DEFAULT_REQUEST_LIMITS;
   const target = { userId, workspace, credential, credentialUpdatedAt };
 

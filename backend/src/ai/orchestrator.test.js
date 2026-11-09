@@ -2057,3 +2057,49 @@ test('hooks: without provider hooks the argv is passed through unchanged and csp
   assert.deepEqual(S.execCalls[0].argv, ['aws', 's3', 'rb', 's3://b']);
   assert.deepEqual(S.classifyCalls[0].cspContext, {});
 });
+
+test('hooks: region fan-out runs each region through the provider-transformed argv', async () => {
+  await withStubHooks(async () => {
+    await sendWithRegions({
+      regions: ['ap-south-1', 'eu-north-1'],
+      execResults: [
+        { stdout: '', stderr: '', exitCode: 0, timedOut: false },
+        { stdout: '', stderr: '', exitCode: 0, timedOut: false },
+      ],
+    });
+    assert.deepEqual(
+      S.execCalls.map((c) => c.argv),
+      [
+        ['aws', 'ec2', 'describe-instances', '--region', 'ap-south-1', 'X'],
+        ['aws', 'ec2', 'describe-instances', '--region', 'eu-north-1', 'X'],
+      ],
+    );
+  });
+});
+
+test('hooks: the dry-run preview runs with the provider-transformed argv', async () => {
+  reset();
+  await withStubHooks(async () => {
+    S.providerResponses = [
+      { type: 'command_request', content: 'aws ec2 terminate-instances', command: 'x' },
+    ];
+    S.classifyResults = [
+      verdict({
+        verdict: POLICY_VERDICTS.REQUIRE_CONFIRMATION,
+        dryRunCapable: true,
+        argv: ['aws', 'ec2', 'terminate-instances'],
+      }),
+    ];
+    S.execResults = [{ stdout: 'DryRunOperation', stderr: '', exitCode: 0, timedOut: false }];
+
+    await handleUserMessage({
+      session: makeSession(),
+      workspace: WORKSPACE,
+      credential: CREDENTIAL,
+      userId: 'user-1',
+      text: 'kill',
+    });
+
+    assert.deepEqual(S.execCalls[0].argv, ['aws', 'ec2', 'terminate-instances', '--dry-run', 'X']);
+  });
+});

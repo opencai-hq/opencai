@@ -16,6 +16,7 @@ docker build -t opencai-sandbox-aws:2.15.30 backend/sandbox/aws
 docker build -t opencai-sandbox-azure:2.91.0 backend/sandbox/azure
 docker build -t opencai-sandbox-gcp:588.0.0 backend/sandbox/gcp
 docker build -t opencai-sandbox-vsphere:0.46.3 backend/sandbox/vsphere
+docker build -t opencai-sandbox-ssh:9.7p1 backend/sandbox/ssh
 docker build -t opencai-sandbox-kubernetes:1.31.4 backend/sandbox/kubernetes
 ```
 
@@ -36,6 +37,7 @@ missing build can never silently fall back to an unhardened upstream image
 | `opencai-sandbox-azure` | Azure CLI 2.91.0 with the `costmanagement` and `resource-graph` extensions |
 | `opencai-sandbox-gcp`   | Google Cloud CLI 588.0.0, `gcloud` only (`gsutil` and `bq` are removed)    |
 | `opencai-sandbox-vsphere` | govc v0.46.3 (VMware vSphere)                                  |
+| `opencai-sandbox-ssh`   | OpenSSH client 9.7p1 (Linux servers over SSH)                    |
 | `opencai-sandbox-kubernetes` | kubectl v1.31.4 (Kubernetes)                               |
 
 - One CLI per image and nothing else — this is a binary allowlist, not a
@@ -47,7 +49,9 @@ missing build can never silently fall back to an unhardened upstream image
   `docker exec` calls for the lifetime of a chat session.
 - `timeout` and, in the Azure image, `sh`. `executeInSandbox` wraps every
   command in `timeout`; the Azure sign-in (`backend/src/ai/csp/azure.js`) is the
-  one fixed, backend-owned command that runs through `sh`.
+  one fixed, backend-owned command that runs through `sh`. The SSH sign-in
+  (`backend/src/ai/csp/ssh.js`) likewise runs one fixed `sh` script that writes
+  the key, client config and known_hosts into the tmpfs home.
 
 Runtime hardening (read-only rootfs, dropped capabilities, `no-new-privileges`,
 memory/CPU/PID limits, bridge networking) is applied by

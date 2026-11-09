@@ -27,12 +27,16 @@ const TOOL_CALL_RULES = [
 
 /**
  * The provider's own CLI rules for one Workspace. Persona text is Admin-edited
- * and may name a CLI; the provider line here is what actually holds.
+ * and may name a CLI; the provider line here is what actually holds. A provider
+ * whose rules depend on the Workspace (SSH names its hosts) defines
+ * `promptRules` as a function of the decrypted credential.
  */
-function providerRulesFor(csp) {
+function providerRulesFor(csp, credential) {
+  const rules =
+    typeof csp.promptRules === 'function' ? csp.promptRules(credential) : csp.promptRules;
   return [
     `This Workspace is on ${csp.label}. The only CLI available is "${csp.binary}"; commands for any other cloud provider's CLI are rejected.`,
-    ...csp.promptRules,
+    ...rules,
   ].join('\n');
 }
 
