@@ -20,6 +20,9 @@ enum CloudServiceProvider {
   AWS
   AZURE
   GCP
+  VSPHERE
+  SSH
+  KUBERNETES
 }
 
 enum ChatMode {

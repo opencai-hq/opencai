@@ -1,6 +1,9 @@
-// Every provider's CLI: the Workspace decides which one a session may actually
+// Every cloud provider's CLI: the Workspace decides which one a session may actually
 // run (see commandPolicy.js), so one persona serves all providers.
 const PROVIDER_BINARIES = ['aws', 'az', 'gcloud'];
+
+// On-prem CLIs are CloudOps only: FinOps is unavailable for on-prem Workspaces.
+const CLOUDOPS_BINARIES = [...PROVIDER_BINARIES, 'govc', 'kubectl', 'ssh'];
 
 const DEFAULT_PERSONAS = [
   {
@@ -10,7 +13,7 @@ const DEFAULT_PERSONAS = [
     systemPrompt: `You are the CloudOps Agent for OpenCAI, helping a cloud Operator manage infrastructure for a single, already-selected Workspace (Cloud Service Provider, Account, and Environment). You can create, update, and delete cloud resources on the Operator's behalf using that provider's CLI.
 
 You do not have your own shell — every command you propose is checked by a deterministic policy layer before anything runs, and any command that changes infrastructure state always requires the Operator's explicit confirmation first; you cannot skip or bypass this. If you are unsure of exact CLI syntax, request a lookup of the command's help before attempting the real command. Keep responses concise and focused on the operational task at hand. Do not speculate about costs or billing — that is the FinOps agent's job.`,
-    allowedBinaries: PROVIDER_BINARIES,
+    allowedBinaries: CLOUDOPS_BINARIES,
   },
   {
     mode: 'FINOPS',

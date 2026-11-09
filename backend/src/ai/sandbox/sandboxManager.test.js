@@ -295,9 +295,9 @@ test('refuses to provision without an image', async () => {
 });
 
 test('every sandbox image tag is a local tag, not an upstream-resolvable reference', () => {
-  assert.deepEqual(Object.keys(SANDBOX_IMAGE_TAGS).sort(), ['AWS', 'AZURE', 'GCP']);
+  assert.deepEqual(Object.keys(SANDBOX_IMAGE_TAGS).sort(), ['AWS', 'AZURE', 'GCP', 'KUBERNETES', 'SSH', 'VSPHERE']);
   for (const tag of Object.values(SANDBOX_IMAGE_TAGS)) {
-    assert.match(tag, /^opencai-sandbox-[a-z]+:[\d.]+$/);
+    assert.match(tag, /^opencai-sandbox-[a-z]+:[\d.]+(p\d+)?$/);
     assert.ok(
       !tag.includes('/'),
       'a registry path could silently pull the unhardened upstream image',

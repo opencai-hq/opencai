@@ -13,6 +13,9 @@ const SANDBOX_IMAGE_TAGS = Object.freeze({
   AWS: 'opencai-sandbox-aws:2.15.30',
   AZURE: 'opencai-sandbox-azure:2.91.0',
   GCP: 'opencai-sandbox-gcp:588.0.0',
+  VSPHERE: 'opencai-sandbox-vsphere:0.46.3',
+  SSH: 'opencai-sandbox-ssh:9.7p1',
+  KUBERNETES: 'opencai-sandbox-kubernetes:1.31.4',
 });
 const SANDBOX_DEFAULT_MEMORY_BYTES = 536870912; // 512 MB
 const SANDBOX_DEFAULT_NANO_CPUS = 1000000000; // 1 vCPU
