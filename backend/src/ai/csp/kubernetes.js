@@ -25,6 +25,8 @@ const FILE_PATH_MESSAGE =
 const NO_CREDENTIAL_MESSAGE =
   'Kubeconfig user needs a token or client-certificate-data with client-key-data';
 
+const NAMESPACE = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/;
+
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const nonEmpty = (value) => typeof value === 'string' && value.length > 0;
 
@@ -92,7 +94,7 @@ const credentialSchema = z.object({
     }),
   namespace: z
     .string()
-    .regex(/^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/, 'namespace must be a valid Kubernetes name')
+    .regex(NAMESPACE, 'namespace must be a valid Kubernetes name')
     .optional(),
 });
 
@@ -254,10 +256,28 @@ function classifyOperation(argv) {
     return { reject: `The option "${blocked}" is not available in this environment` };
   }
 
-  // The verb is the first word, after only a namespace flag. Any other flag before
-  // it could swallow the next word as its value and change which command runs.
+  // The verb is the first word, after only namespace flags (`-n X`, `-nX`,
+  // `--namespace X`, `--namespace=X`). Any other flag before it could swallow the
+  // next word as its value and change which command runs.
   let i = 0;
-  while (t[i] === '-n' || t[i] === '--namespace') i += 2;
+  for (;;) {
+    let namespace;
+    if (t[i] === '-n' || t[i] === '--namespace') {
+      namespace = t[i + 1];
+      i += 2;
+    } else if (t[i]?.startsWith('--namespace=')) {
+      namespace = t[i].slice('--namespace='.length);
+      i += 1;
+    } else if (t[i]?.startsWith('-n') && !t[i].startsWith('--')) {
+      namespace = t[i].slice(2);
+      i += 1;
+    } else {
+      break;
+    }
+    if (typeof namespace !== 'string' || !NAMESPACE.test(namespace)) {
+      return { reject: `Invalid namespace "${namespace ?? ''}"` };
+    }
+  }
   const verb = t[i];
   if (!verb || verb.startsWith('-')) return { reject: 'Command is missing a kubectl verb' };
 

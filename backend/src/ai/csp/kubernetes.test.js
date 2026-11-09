@@ -405,6 +405,33 @@ test('flag-value confusion: -n before the verb is fine', () => {
   assert.equal(classify('kubectl --namespace dev rollout restart deploy/web').kind, 'mutating');
 });
 
+test('namespace before the verb: attached and = forms', () => {
+  assert.equal(classify('kubectl -nkube-system get pods').kind, 'readonly');
+  assert.equal(classify('kubectl --namespace=dev get pods').kind, 'readonly');
+  assert.equal(classify('kubectl -nkube-system delete pod p').kind, 'mutating');
+  assert.equal(classify('kubectl --namespace=dev -n dev delete pod p').kind, 'mutating');
+  assert.equal(classify('kubectl -nkube-system get pods').verb, 'get');
+});
+
+expectReject([
+  'kubectl -nkube-system get secrets',
+  'kubectl --namespace=dev get secret s -o yaml',
+  'kubectl -ndev describe secret s',
+]);
+
+// The namespace value is validated in every form, so no flag can hide in it.
+expectReject([
+  'kubectl -n Bad get pods',
+  'kubectl -n -o get pods',
+  'kubectl -n',
+  'kubectl -nBad get pods',
+  'kubectl -n=dev get pods',
+  'kubectl --namespace= get pods',
+  'kubectl --namespace=a_b get pods',
+  'kubectl --namespace=-x get pods',
+  'kubectl -nkube-system',
+]);
+
 // Fix round 1: -o is an allowlist; templatefile reads the stored kubeconfig.
 expectReject([
   'kubectl get pods -o templatefile --template=/home/sandbox/.kube/config',
