@@ -23,6 +23,11 @@ docker build -t opencai-sandbox-kubernetes:1.31.4 backend/sandbox/kubernetes
 The tags must match `SANDBOX_IMAGE_TAGS` in `backend/src/ai/constants.js`
 exactly. Each tag carries the version of the CLI in the image.
 
+The on-prem images are **linux/amd64 only**: the vSphere and Kubernetes images
+download the x86_64 `govc` and amd64 `kubectl` release binaries (and check
+their amd64 checksums), so build and run them on an amd64 Docker host. The SSH
+image installs from Alpine packages but is built and tested on amd64 only too.
+
 If an image has not been built, `provisionSandbox()` fails loudly with a
 "no such image" error from the Docker daemon. That is deliberate: the tags are
 purely local names that cannot resolve against any upstream registry, so a

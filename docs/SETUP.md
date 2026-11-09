@@ -301,6 +301,11 @@ it. Verify with a throwaway container: `docker run --rm alpine wget -qO- --no-ch
 
 FinOps is not available for on-prem Workspaces; they get CloudOps only.
 
+**Credential changes and live sessions.** A chat session signs its sandbox in once, when the
+sandbox is created, and keeps the SSH key, host list and known_hosts, or the kubeconfig and
+namespace, it signed in with for as long as it lives. After an Administrator rotates a key, edits
+the hosts or replaces the kubeconfig, start a new chat session to pick up the change.
+
 ### VMware vSphere
 
 - Credential: vCenter URL (`https://...`), username, password, optional "skip certificate
