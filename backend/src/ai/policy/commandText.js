@@ -18,8 +18,14 @@ const { parse } = require('shell-quote');
 function commandTextFromArgv(argv) {
   return argv
     .map((word) => {
-      const tokens = parse(word);
-      if (tokens.length === 1 && tokens[0] === word) return word;
+      let bare = false;
+      try {
+        const tokens = parse(word);
+        bare = tokens.length === 1 && tokens[0] === word;
+      } catch {
+        // parse() throws on an unclosed `${`; such a word is simply quoted.
+      }
+      if (bare) return word;
       return `'${word.replace(/'/g, `'"'"'`)}'`;
     })
     .join(' ');

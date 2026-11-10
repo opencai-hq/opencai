@@ -56,3 +56,12 @@ test('words that need it are quoted', () => {
     "ssh web-01 journalctl --since '2026-11-09 10:00'",
   );
 });
+
+// shell-quote's parse() throws "Bad substitution" on an unclosed `${`. Such a
+// word must be quoted, not crash the turn that tries to show it.
+for (const word of ['x${', '${', 'a${b', '${x']) {
+  test(`does not throw on an unclosed substitution: ${word}`, () => {
+    const argv = ['aws', 's3', 'ls', word];
+    assert.deepEqual(parse(commandTextFromArgv(argv)), argv);
+  });
+}

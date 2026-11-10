@@ -85,6 +85,12 @@ function classifyOperation(argv) {
     return { reject: 'Command is missing a govc command name' };
   }
 
+  // Every govc command name is lowercase. Anything else is refused outright so
+  // that no casing trick can slip past the case-sensitive lists below.
+  if (!/^[a-z0-9][a-z0-9.-]*$/.test(command)) {
+    return { reject: `Unrecognized govc command "${command}"` };
+  }
+
   if (matchesVerb(command, REJECTED_EXACT, REJECTED_PREFIXES)) {
     return { reject: `"govc ${command}" is not available in this environment` };
   }
