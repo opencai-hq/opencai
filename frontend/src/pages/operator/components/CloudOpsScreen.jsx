@@ -1,12 +1,7 @@
 import { WorkspaceSummaryCard } from './WorkspaceSummaryCard';
 import { ChatPanel } from './ChatPanel';
-
-const CLOUDOPS_PROMPTS = [
-  'Create an EC2 instance',
-  'Start an EC2 instance',
-  'Create EBS volume',
-  'Create a new S3 bucket',
-];
+import { cspKind } from '../../../lib/csp';
+import { cloudOpsPrompts } from '../../../lib/suggestions';
 
 export function CloudOpsScreen({ workspace, onEditWorkspace, messages, onSend, onConfirm, onCancel, sending, liveStatus }) {
   // The intro and workspace card only matter before the conversation starts;
@@ -21,8 +16,9 @@ export function CloudOpsScreen({ workspace, onEditWorkspace, messages, onSend, o
             Hi, I'm CloudOps Agent ⚡
           </h1>
           <p className="mt-2 text-gray-500 dark:text-gray-400">
-            I can help you with cloud operations including creating, updating, and deleting
-            resources.
+            {cspKind(workspace?.csp) === 'onprem'
+              ? 'I can help you operate your on-prem infrastructure: checking health, and making changes with your approval.'
+              : 'I can help you with cloud operations including creating, updating, and deleting resources.'}
           </p>
         </div>
       )}
@@ -32,7 +28,7 @@ export function CloudOpsScreen({ workspace, onEditWorkspace, messages, onSend, o
         <ChatPanel
           messages={messages}
           onSend={onSend}
-          suggestedPrompts={CLOUDOPS_PROMPTS}
+          suggestedPrompts={cloudOpsPrompts(workspace?.csp)}
           onConfirm={onConfirm}
           onCancel={onCancel}
           sending={sending}

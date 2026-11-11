@@ -1,4 +1,5 @@
 import { ChatPanel } from './ChatPanel';
+import { finOpsPrompts } from '../../../lib/suggestions';
 
 const SUB_MODES = [
   {
@@ -6,44 +7,28 @@ const SUB_MODES = [
     emoji: '🏷️',
     title: 'Tag Compliance',
     description: 'Manage tags',
-    prompts: [
-      'Find resources missing required tags',
-      'Show untagged EC2 instances',
-      'Apply mandatory tags to a resource',
-    ],
   },
   {
     key: 'COST_ANALYTICS',
     emoji: '📊',
     title: 'Cost Analytics',
     description: 'Analyze costs',
-    prompts: [
-      'Show service-wise cost breakdown',
-      'Report costs by tags for this month without credits',
-      'Show me cost trend for last 14 days',
-    ],
   },
   {
     key: 'WASTE_MANAGEMENT',
     emoji: '♻️',
     title: 'Waste Management',
     description: 'Unused resources',
-    prompts: ['Find unused EBS volumes', 'List idle EC2 instances', 'Find unattached Elastic IPs'],
   },
   {
     key: 'COST_OPTIMISATION',
     emoji: '💰',
     title: 'Cost Optimisation',
     description: 'Optimise spending',
-    prompts: [
-      'Suggest EC2 rightsizing opportunities',
-      'Find unused Reserved Instances',
-      'Recommend Savings Plans',
-    ],
   },
 ];
 
-export function FinOpsScreen({ subMode, onSelectSubMode, messages, onSend, onConfirm, onCancel, sending, liveStatus }) {
+export function FinOpsScreen({ workspace, subMode, onSelectSubMode, messages, onSend, onConfirm, onCancel, sending, liveStatus }) {
   const active = SUB_MODES.find((m) => m.key === subMode);
   // Once a conversation starts, the intro and agent picker give way to it.
   const started = messages.length > 0;
@@ -96,7 +81,7 @@ export function FinOpsScreen({ subMode, onSelectSubMode, messages, onSend, onCon
           <ChatPanel
             messages={messages}
             onSend={onSend}
-            suggestedPrompts={active.prompts}
+            suggestedPrompts={finOpsPrompts(workspace?.csp, active.key)}
             onConfirm={onConfirm}
             onCancel={onCancel}
             sending={sending}

@@ -459,6 +459,7 @@ export function OperatorPage() {
                   />
                 ) : (
                   <FinOpsScreen
+                    workspace={workspace}
                     subMode={financeSubMode}
                     onSelectSubMode={setFinanceSubMode}
                     messages={messages}

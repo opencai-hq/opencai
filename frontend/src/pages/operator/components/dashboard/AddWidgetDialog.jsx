@@ -7,19 +7,7 @@ import { PERIOD_LABELS } from '../../../../lib/chartData';
 import { createWidget, previewWidget } from '../../../../lib/dashboardApi';
 import { CommandSteps } from './CommandSteps';
 import { WidgetChart } from './WidgetChart';
-
-const EXAMPLES = {
-  CLOUDOPS: [
-    'Virtual machines by state',
-    'Storage volumes and their sizes',
-    'How many storage buckets there are',
-  ],
-  FINOPS: [
-    'Daily cost by service for the last 30 days',
-    'Monthly cost for the last 6 months',
-    'Total cost this month',
-  ],
-};
+import { graphExamples } from '../../../../lib/suggestions';
 
 // How many of the latest live steps the dialog shows while a graph is built.
 const MAX_STEPS_SHOWN = 6;
@@ -147,7 +135,7 @@ export function AddWidgetDialog({ workspace, mode, onCreated, onClose }) {
           </label>
 
           <div className="flex flex-wrap gap-2">
-            {(EXAMPLES[mode] ?? []).map((example) => (
+            {graphExamples(workspace?.csp, mode).map((example) => (
               <button
                 key={example}
                 type="button"
