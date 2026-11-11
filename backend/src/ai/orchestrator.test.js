@@ -1310,6 +1310,181 @@ test('the model-turn budget is bounded and ends with the fallback message', asyn
   assert.match(last.content, /trouble completing this within the allotted steps/);
 });
 
+/** Queue one model proposal and the policy's verdict for it. */
+function propose(argv, over = {}) {
+  const command = argv.join(' ');
+  S.providerResponses.push({ type: 'command_request', content: command, command });
+  S.classifyResults.push(verdict({ argv, ...over }));
+}
+const refuse = (argv, reason) =>
+  propose(argv, { verdict: POLICY_VERDICTS.REJECTED, reason });
+
+test('a bare step description gets one nudge, and the tool call that follows runs', async () => {
+  reset();
+  const session = makeSession();
+  S.providerResponses.push({
+    type: 'text',
+    content: 'Start and enable the Redis service to run on boot',
+  });
+  propose(['aws', 'ec2', 'describe-instances']);
+  S.providerResponses.push({ type: 'text', content: 'Redis is running.' });
+
+  const { messages } = await handleUserMessage({
+    session,
+    workspace: WORKSPACE,
+    credential: CREDENTIAL,
+    userId: 'user-1',
+    text: 'start redis',
+  });
+
+  assert.equal(S.providerCalls.length, 3);
+  assert.match(S.providerCalls[1].newMessage, /described a step but did not call a tool/);
+  assert.equal(S.execCalls.length, 1);
+  // The dangling description is never shown to the Operator.
+  assert.ok(!messages.some((m) => m.content === 'Start and enable the Redis service to run on boot'));
+  assert.equal(messages.at(-1).content, 'Redis is running.');
+});
+
+test('"…Let me start it." without a tool call is nudged into the tool call', async () => {
+  reset();
+  const session = makeSession();
+  S.providerResponses.push({
+    type: 'text',
+    content: 'Redis is not currently running. Let me start it.',
+  });
+  propose(['aws', 'ec2', 'describe-instances']);
+  S.providerResponses.push({ type: 'text', content: 'Redis is running now.' });
+
+  const { messages } = await handleUserMessage({
+    session,
+    workspace: WORKSPACE,
+    credential: CREDENTIAL,
+    userId: 'user-1',
+    text: 'is redis up?',
+  });
+
+  assert.equal(S.providerCalls.length, 3);
+  assert.equal(S.execCalls.length, 1);
+  assert.ok(!messages.some((m) => m.content.includes('Let me start it')));
+  assert.equal(messages.at(-1).content, 'Redis is running now.');
+});
+
+test('a second bare step description is shown as the answer (one nudge per turn)', async () => {
+  reset();
+  const session = makeSession();
+  S.providerResponses.push({ type: 'text', content: 'Start the Redis service' });
+  S.providerResponses.push({ type: 'text', content: 'Start the Redis service now' });
+
+  const { messages } = await handleUserMessage({
+    session,
+    workspace: WORKSPACE,
+    credential: CREDENTIAL,
+    userId: 'user-1',
+    text: 'start redis',
+  });
+
+  assert.equal(S.providerCalls.length, 2);
+  assert.equal(messages.at(-1).content, 'Start the Redis service now');
+});
+
+test('a normal final answer is not nudged', async () => {
+  reset();
+  const session = makeSession();
+  S.providerResponses.push({ type: 'text', content: 'Redis is installed and running.' });
+
+  await handleUserMessage({
+    session,
+    workspace: WORKSPACE,
+    credential: CREDENTIAL,
+    userId: 'user-1',
+    text: 'status?',
+  });
+
+  assert.equal(S.providerCalls.length, 1);
+});
+
+test('a refused command proposed again ends the turn with the policy reason', async () => {
+  reset();
+  const session = makeSession();
+  refuse(['ssh', 'web-01', 'apk', 'add', 'redis'], 'Remote command "apk" is not available');
+  refuse(['ssh', 'web-01', 'which', 'apk'], 'Remote command "which" is not available');
+  refuse(['ssh', 'web-01', 'apk', 'add', 'redis'], 'Remote command "apk" is not available');
+  refuse(['ssh', 'web-01', 'echo', 'never-asked'], 'unreachable');
+
+  const { messages } = await handleUserMessage({
+    session,
+    workspace: WORKSPACE,
+    credential: CREDENTIAL,
+    userId: 'user-1',
+    text: 'install redis',
+  });
+
+  assert.equal(S.providerCalls.length, 3);
+  assert.equal(S.execCalls.length, 0);
+  const last = messages.at(-1);
+  assert.equal(last.kind, 'TEXT');
+  assert.match(last.content, /command policy doesn't allow/);
+  assert.match(last.content, /Remote command "apk" is not available/);
+  assert.doesNotMatch(last.content, /allotted steps/);
+});
+
+test('four refusals in a row end the turn', async () => {
+  reset();
+  const session = makeSession();
+  for (const word of ['one', 'two', 'three', 'four', 'five']) {
+    refuse(['ssh', 'web-01', word], `Remote command "${word}" is not available`);
+  }
+
+  const { messages } = await handleUserMessage({
+    session,
+    workspace: WORKSPACE,
+    credential: CREDENTIAL,
+    userId: 'user-1',
+    text: 'probe',
+  });
+
+  assert.equal(S.providerCalls.length, 4);
+  assert.match(messages.at(-1).content, /Remote command "four" is not available/);
+});
+
+test('a command that runs resets the refusal count', async () => {
+  reset();
+  const session = makeSession();
+  for (const word of ['a', 'b', 'c']) refuse(['ssh', 'web-01', word], `no ${word}`);
+  propose(['aws', 'ec2', 'describe-instances']);
+  for (const word of ['d', 'e', 'f']) refuse(['ssh', 'web-01', word], `no ${word}`);
+  S.providerResponses.push({ type: 'text', content: 'done' });
+
+  const { messages } = await handleUserMessage({
+    session,
+    workspace: WORKSPACE,
+    credential: CREDENTIAL,
+    userId: 'user-1',
+    text: 'mixed',
+  });
+
+  assert.equal(S.providerCalls.length, 8);
+  assert.equal(messages.at(-1).content, 'done');
+});
+
+test('a step budget that runs out on refusals reports the refusal, not the budget', async () => {
+  reset();
+  const session = makeSession();
+  for (let i = 0; i < 5; i += 1) propose(['aws', 'ec2', 'describe-instances']);
+  for (const word of ['x', 'y', 'z']) refuse(['ssh', 'web-01', word], `no ${word}`);
+
+  const { messages } = await handleUserMessage({
+    session,
+    workspace: WORKSPACE,
+    credential: CREDENTIAL,
+    userId: 'user-1',
+    text: 'budget',
+  });
+
+  assert.equal(S.providerCalls.length, 8);
+  assert.match(messages.at(-1).content, /command policy doesn't allow what it needs \(no z\)/);
+});
+
 /* -------------------------------------------------------------------------- */
 /* resolveProviderConfig (exercised through handleUserMessage)                 */
 /* -------------------------------------------------------------------------- */

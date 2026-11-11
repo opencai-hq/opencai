@@ -43,6 +43,8 @@ const {
   recoverToolCall,
   toolResultNote,
   executionOutcome,
+  looksLikeStepDescription,
+  STEP_DESCRIPTION_NUDGE,
 } = require('./conversation');
 
 // How many prior ChatMessage rows are replayed into the model's context.
@@ -77,6 +79,16 @@ const SIGN_IN_FAILED_TEXT =
 const BUDGET_EXHAUSTED_TEXT =
   "I'm having trouble completing this within the allotted steps. Please try rephrasing or breaking your request into smaller steps.";
 const DRY_RUN_FAILED_TEXT = '(dry-run failed to execute)';
+
+// A model that keeps proposing commands the policy refuses is not going to get
+// anywhere; it only burns turns. The turn ends once a refused command is
+// proposed again, or after this many refusals in a row.
+const MAX_CONSECUTIVE_REJECTIONS = 4;
+
+/** Why the turn stopped after the policy kept refusing, in the Operator's terms. */
+function blockedText(reason) {
+  return `I couldn't do this: this Workspace's command policy doesn't allow what it needs (${reason}). I stopped instead of trying other commands. If this should be possible, ask an Administrator.`;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Internal helpers                                                            */
@@ -399,6 +411,10 @@ async function runModelLoop({
 }) {
   const csp = getCsp(workspace.csp);
   const systemPrompt = systemPromptFor(persona, csp, credential);
+  const rejectedCommands = new Set();
+  let lastRejection = null;
+  let consecutiveRejections = 0;
+  let nudged = false;
 
   for (let turn = 0; turn < MAX_MODEL_TURNS_PER_MESSAGE; turn += 1) {
     if (Date.now() - startedAt >= MAX_ORCHESTRATION_WALL_CLOCK_MS) break;
@@ -441,7 +457,21 @@ async function runModelLoop({
       providerResult = recoverToolCall(providerResult.content) ?? providerResult;
     }
 
-    // 1. Plain answer -- the model is done with this turn.
+    // 1a. A bare step description ("Start the Redis service") is a tool call the
+    //     model forgot to make. Not shown to the Operator, where it reads as an
+    //     unasked question; the model is told once and gets another turn.
+    if (
+      providerResult.type === 'text' &&
+      !nudged &&
+      looksLikeStepDescription(providerResult.content)
+    ) {
+      nudged = true;
+      conversation.push({ role: 'assistant', content: providerResult.content.trim() });
+      conversation.push({ role: 'user', content: STEP_DESCRIPTION_NUDGE });
+      continue;
+    }
+
+    // 1b. Plain answer -- the model is done with this turn.
     if (providerResult.type === 'text') {
       await createAssistantText(createdMessages, session.id, providerResult.content);
       return;
@@ -509,12 +539,21 @@ async function runModelLoop({
           ? { command: result.argv, reason: rejectionReason, regions: requestedRegions }
           : { command: result.argv, reason: rejectionReason },
       });
+      const repeated = rejectedCommands.has(commandText);
+      rejectedCommands.add(commandText);
+      lastRejection = rejectionReason;
+      consecutiveRejections += 1;
+      if (repeated || consecutiveRejections >= MAX_CONSECUTIVE_REJECTIONS) {
+        await createAssistantText(createdMessages, session.id, blockedText(rejectionReason));
+        return;
+      }
       conversation.push(toolCallNote(kind, commandText));
       conversation.push(
         toolResultNote(kind, reasonText, STATUS_TO_OUTCOME[CHAT_MESSAGE_STATUS.REJECTED]),
       );
       continue;
     }
+    consecutiveRejections = 0;
 
     // 3a. Read-only across several regions: one step, run in parallel.
     if (isReadOnly && requestedRegions) {
@@ -676,8 +715,13 @@ async function runModelLoop({
     return;
   }
 
-  // Fell out of the loop without reaching a terminal state.
-  await createAssistantText(createdMessages, session.id, BUDGET_EXHAUSTED_TEXT);
+  // Fell out of the loop without reaching a terminal state. If it ended on
+  // refusals, say why rather than blaming the step budget.
+  await createAssistantText(
+    createdMessages,
+    session.id,
+    consecutiveRejections > 0 ? blockedText(lastRejection) : BUDGET_EXHAUSTED_TEXT,
+  );
 }
 
 /* -------------------------------------------------------------------------- */

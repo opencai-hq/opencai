@@ -19,10 +19,12 @@ const TOOL_CALL_RULES = [
   'Earlier tool calls appear in this conversation as system-written notes like "(called run_command: <command>)", each followed by a "(<tool> result)", "(<tool> failed, ...)" or "(<tool> rejected by policy)" message.',
   'Never write such a note yourself. Writing a command in your reply does not run it: the only way to run a command is to call the run_lookup or run_command tool.',
   'When a command fails, read the error and fix it yourself before involving the Operator. If you are unsure of the correct syntax or parameters, look them up with run_lookup, then retry with a corrected command.',
-  'When a command is rejected by policy, it was not run; do not repeat it. Use a different, allowed command to get the same information.',
+  'When a command is rejected by policy, it was not run; never propose it again. If a different allowed command does the same job, use that.',
+  'If the action the Operator asked for is not allowed here, stop and tell the Operator plainly what is not supported and why. Do not probe the environment (which, echo, listing system directories) looking for a way around the policy.',
   'Help pages are long and only partly shown to you. Prefer commands you already know; look up help only for the options you need.',
   'Ask the Operator only for information you cannot discover with a command.',
   "Once you have the information you need, answer the Operator's question directly in plain language.",
+  'A reply without a tool call ends your turn and is shown to the Operator as your answer. To take the next step, call the tool; never just describe the step. If you want the Operator to decide before you continue, ask them a clear question ending with "?".',
 ].join('\n');
 
 /**
@@ -165,6 +167,43 @@ function toolResultNote(kind, output, outcome = 'result') {
   return { role: 'user', content: `(${KIND_TO_TOOL[kind]} ${outcome})\n${text}` };
 }
 
+// A reply like "Start and enable the Redis service to run on boot": one short
+// line with no closing punctuation. That is the shape of the explanation that
+// goes with a tool call, written as the whole reply -- the model meant to run
+// the step and did not call the tool. A real answer is a sentence or longer.
+const MAX_STEP_DESCRIPTION_CHARS = 160;
+
+// The same mistake in sentence form: "Redis is not running. Let me start it."
+// The reply ends by announcing a next action the model never took.
+const ANNOUNCED_STEP =
+  /^(?:(?:ok(?:ay)?|now|next|so|then|first),?\s+)?(?:let me(?! know)|let's|i'll|i will|i'm going to|i am going to|i'll now|i will now|i need to|i should)\b/i;
+
+function lastSentence(text) {
+  const sentences = text
+    .trim()
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return sentences.at(-1) ?? '';
+}
+
+function looksLikeStepDescription(text) {
+  if (typeof text !== 'string') return false;
+  const line = text.trim();
+  if (line.length === 0) return false;
+  const bareLine =
+    line.length <= MAX_STEP_DESCRIPTION_CHARS &&
+    !line.includes('\n') &&
+    /\s/.test(line) &&
+    !/[.!?:)\]`"']$/.test(line);
+  const last = lastSentence(line);
+  const announcesStep = ANNOUNCED_STEP.test(last) && !last.includes('?');
+  return bareLine || announcesStep;
+}
+
+const STEP_DESCRIPTION_NUDGE =
+  '(system note) Your last reply described a step but did not call a tool, so nothing ran. If you meant to run it, call the tool now. Otherwise reply with your answer to the Operator; if you need their decision, ask a question ending with "?".';
+
 function executionOutcome(execution) {
   if (execution.timedOut) return 'failed, timed out';
   return execution.exitCode === 0 ? 'result' : `failed, exit code ${execution.exitCode}`;
@@ -180,4 +219,6 @@ module.exports = {
   recoverToolCall,
   toolResultNote,
   executionOutcome,
+  looksLikeStepDescription,
+  STEP_DESCRIPTION_NUDGE,
 };
