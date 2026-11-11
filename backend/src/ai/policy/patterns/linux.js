@@ -72,6 +72,39 @@ const APT = {
     autoremove: pkgs(0, APT_FLAGS),
   },
 };
+// Alpine. No --repository/-X, --allow-untrusted or --root: only the system's
+// configured repositories, installing into the running system.
+const APK_FLAGS = bools('-q --quiet');
+const APK = {
+  subs: {
+    add: pkgs(1, { ...APK_FLAGS, '--no-cache': true, '-u': true, '--upgrade': true }),
+    del: pkgs(1, APK_FLAGS),
+    update: pkgs(0, APK_FLAGS),
+    upgrade: pkgs(0, { ...APK_FLAGS, '--no-cache': true }),
+  },
+};
+const APK_READ = {
+  subs: {
+    info: { flags: bools('-v -e --installed -d --description -s --size -L --contents'), args: { re: PACKAGE, max: 20 } },
+    list: { flags: bools('-I --installed -u --upgradable -a --available'), args: { re: PACKAGE, max: 5 } },
+  },
+};
+
+// OpenRC (Alpine, Gentoo): `rc-service <service> <action>`. The service comes
+// before the action, so it is validated here rather than as a sub-command. No
+// options at all (-e, -l, -r, --ifexists... are not needed).
+const OPENRC_READ_ACTIONS = new Set(['status']);
+const OPENRC_WRITE_ACTIONS = new Set(['start', 'stop', 'restart']);
+const rcService = (actions) => ({
+  check([service, action, ...rest]) {
+    if (!service || !UNIT.test(service)) return '"rc-service" needs a service name';
+    if (!actions.has(action)) return `"rc-service ${service} ${action ?? ''}" is not available here`;
+    if (rest.length > 0) return `"rc-service" accepts no further arguments`;
+    return null;
+  },
+});
+const RUNLEVEL = /^[a-z][a-z0-9_-]{0,31}$/;
+
 const DNF_FLAGS = bools('-y --assumeyes -q --quiet');
 const DNF = {
   subs: {
@@ -176,6 +209,10 @@ const READONLY = {
       '--identifier': IDENT,
     },
   },
+  apk: APK_READ,
+  'rc-service': rcService(OPENRC_READ_ACTIONS),
+  'rc-status': { flags: bools('-a --all -s --servicelist -c --crashed'), args: { re: RUNLEVEL, max: 1 } },
+  'rc-update': { subs: { show: { flags: bools('-v --verbose'), args: { re: RUNLEVEL, max: 1 } } } },
   systemctl: {
     subs: Object.fromEntries(
       'status is-active is-enabled is-failed list-units list-unit-files list-timers list-sockets'
@@ -256,6 +293,14 @@ const MUTATING = {
   apt: APT,
   dnf: DNF,
   yum: DNF,
+  apk: APK,
+  'rc-service': rcService(OPENRC_WRITE_ACTIONS),
+  'rc-update': {
+    subs: {
+      add: { args: { re: UNIT, min: 1, max: 2 } },
+      del: { args: { re: UNIT, min: 1, max: 2 } },
+    },
+  },
   kill: {
     flags: { ...bools('-9 -15 -2 -TERM -KILL -HUP -INT -QUIT -USR1 -USR2', 'solo'), '-s': SIGNAL },
     args: { re: PID, min: 1, max: 20 },

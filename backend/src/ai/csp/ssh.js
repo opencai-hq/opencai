@@ -258,28 +258,56 @@ function argsProblem(spec, args, label) {
   return null;
 }
 
-/** Classify the remote words (after any sudo). */
+/** The remote commands, as the agent should see them: read-only, then changes. */
+function commandCatalogue() {
+  const describe = (table) =>
+    Object.entries(table)
+      .map(([cmd, entry]) => (entry.subs ? `${cmd} (${Object.keys(entry.subs).join('|')})` : cmd))
+      .join(', ');
+  return { readonly: describe(READONLY), mutating: describe(MUTATING) };
+}
+
+const AVAILABLE_COMMANDS = [...new Set([...Object.keys(READONLY), ...Object.keys(MUTATING)])]
+  .sort()
+  .join(', ');
+
+/**
+ * Classify the remote words (after any sudo). A command may appear in both
+ * tables (systemctl status vs restart, rc-service x status vs start); each is
+ * tried in turn, and the first table's refusal is reported if neither fits.
+ */
 function classifyRemote(words) {
   const [cmd, sub] = words;
   const tables = [
     ['readonly', own(READONLY, cmd)],
     ['mutating', own(MUTATING, cmd)],
   ].filter(([, entry]) => entry);
-  if (tables.length === 0) return { reject: `Remote command "${cmd}" is not available` };
+  if (tables.length === 0) {
+    return {
+      reject: `Remote command "${cmd}" is not available. Available commands: ${AVAILABLE_COMMANDS}`,
+    };
+  }
 
+  let firstProblem = null;
   for (const [kind, entry] of tables) {
     if (!entry.subs) {
       const problem = argsProblem(entry, words.slice(1), cmd);
-      return problem ? { reject: problem } : { kind, verb: cmd };
+      if (!problem) return { kind, verb: cmd };
+      firstProblem ??= problem;
+      continue;
     }
     const spec = typeof sub === 'string' ? own(entry.subs, sub) : undefined;
     if (spec) {
       const verb = `${cmd} ${sub}`;
       const problem = argsProblem(spec, words.slice(2), verb);
-      return problem ? { reject: problem } : { kind, verb };
+      if (!problem) return { kind, verb };
+      firstProblem ??= problem;
     }
   }
-  return { reject: sub ? `"${cmd} ${sub}" is not available` : `"${cmd}" needs a sub-command` };
+  return {
+    reject:
+      firstProblem ?? (sub ? `"${cmd} ${sub}" is not available` : `"${cmd}" needs a sub-command`),
+  };
 }
 
 /** Classify `ssh <host> [sudo] <command> [args]`. */
@@ -324,6 +352,7 @@ function classifyOperation(argv, context) {
 
 function promptRules(credential) {
   const { hostNames } = policyContext(credential);
+  const catalogue = commandCatalogue();
   return [
     `Run commands as "ssh <host> <command> [args]". The hosts are: ${hostNames.join(', ') || '(none configured)'}. Use these names exactly; never an address or user@host.`,
     'Do not pass ssh options; the connection is preconfigured.',
@@ -334,6 +363,9 @@ function promptRules(credential) {
     'Use "top -b -n 1"; interactive programs, editors, shells and interpreters are unavailable.',
     'Prefer JSON-capable flags: ip -j, lsblk -J, systemctl <verb> --output=json, docker <verb> --format json.',
     `Files are readable only under ${READABLE_DIR}/ and at ${[...READABLE_FILES].join(', ')}.`,
+    `These are the only remote commands. Read-only: ${catalogue.readonly}.`,
+    `Changes (always need Operator approval): ${catalogue.mutating}. Packages: apt/apt-get (Debian, Ubuntu), dnf/yum (RHEL, Fedora), apk (Alpine). Services: systemctl (systemd) or rc-service/rc-update (OpenRC, e.g. Alpine).`,
+    'Check the OS first (cat /etc/os-release) and use its package manager and service manager. If what the Operator asks for needs a command not listed here, say so instead of trying others.',
   ];
 }
 
