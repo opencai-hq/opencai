@@ -28,7 +28,7 @@ You need [Git](https://git-scm.com/) and [Docker](https://www.docker.com/product
 On Windows, run these in Git Bash.
 
 ```sh
-git clone https://github.com/AB527/opencai.git
+git clone https://github.com/opencai-hq/opencai.git
 cd opencai
 ./setup.sh
 ```

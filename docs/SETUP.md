@@ -42,7 +42,7 @@ Compose starts everything: Postgres, MinIO (and its bucket), the backend and the
 is not needed on your machine; it runs inside the containers.
 
 ```sh
-git clone https://github.com/AB527/opencai.git
+git clone https://github.com/opencai-hq/opencai.git
 cd opencai
 ./setup.sh
 ```
@@ -66,7 +66,7 @@ Continue with [First sign-in](#first-sign-in).
 These are the steps `setup.sh` runs when you choose the bundled Postgres and MinIO.
 
 ```sh
-git clone https://github.com/AB527/opencai.git
+git clone https://github.com/opencai-hq/opencai.git
 cd opencai
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
@@ -118,7 +118,7 @@ create a bucket named `opencai`.
 Clone and configure:
 
 ```sh
-git clone https://github.com/AB527/opencai.git
+git clone https://github.com/opencai-hq/opencai.git
 cd opencai
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
